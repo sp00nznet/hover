@@ -26,6 +26,7 @@ import os
 import re
 import subprocess
 import sys
+import time
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 HOST = os.path.join(ROOT, 'build', 'hover.exe')
@@ -50,6 +51,10 @@ MILESTONES = [
     ('share codes self-test', r'\[level\] selftest OK'),
     ('Recomp menu on the frame', r'\[menu\] Recomp menu added'),
     ('split screen: 2 players, 150 frames', r'\[split\] .*2x1 views.*\[capture\] 150 frames: stopping'),
+    ('online: host and client start one game', r'\[online-host\] .*game on: 2 seats'),
+    ('online: in sync at tick 400 on both PCs',
+     r'(?s)\[online-host\] [^\n]*in sync at tick 400.*\[online-client\] [^\n]*in sync at tick 400'),
+    ('online: a one-unit nudge is caught', r'\[online-desync\] .*DESYNC at tick 120'),
 ]
 
 # Split screen: player 2 in a robot seat, driven by I/J/K/L, its own view.
@@ -61,6 +66,22 @@ SPLIT = ['--players', '2', '--frames', '150', '--seed', '12345', '--key', 'F2@20
 # The seed is pinned, so level 1 places everything the same way every run.
 PLAY = ['--frames', '1000', '--diff', '150,210', '--seed', '12345',
         '--key', 'F2@2000', '--key', 'UP@8000+12000', '--key', 'LEFT@14000+800']
+
+
+def online(port, host_extra, client_extra, frames):
+    """A host and a client on this PC, over localhost: both logs."""
+    common = ['--headless', '--run', '--watchdog', '120', '--frames', str(frames)]
+    h = subprocess.Popen([HOST] + common + ['--host', str(port)] + host_extra, cwd=ROOT,
+                         stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, errors='replace')
+    time.sleep(1)
+    c = subprocess.run([HOST] + common + ['--join', '127.0.0.1:%d' % port] + client_extra, cwd=ROOT,
+                       capture_output=True, text=True, errors='replace', timeout=180)
+    try:
+        hout = h.communicate(timeout=60)[0]
+    except subprocess.TimeoutExpired:
+        h.kill()
+        hout = h.communicate()[0]
+    return hout.replace('\n', ' '), (c.stdout + c.stderr).replace('\n', ' ')
 
 
 def boot(seconds):
@@ -77,6 +98,12 @@ def boot(seconds):
     t = subprocess.run([HOST, '--headless', '--run', '--watchdog', '90'] + SPLIT, cwd=ROOT,
                        capture_output=True, text=True, errors='replace', timeout=150)
     out += '\n[split] ' + (t.stdout + t.stderr).replace('\n', ' ') + '\n'
+    # Online: lockstep over localhost, both driving; then a deliberate desync.
+    hout, cout = online(7795, ['--key', 'UP@12000+6000'],
+                        ['--key', 'UP@12000+6000', '--key', 'RIGHT@13000+1500'], 520)
+    out += '\n[online-host] ' + hout + '\n[online-client] ' + cout + '\n'
+    hout, cout = online(7796, [], ['--net-desync-test', '100'], 300)
+    out += '\n[online-desync] ' + hout + ' ' + cout + '\n'
     for test in ('--pad-selftest', '--levels-selftest'):
         t = subprocess.run([HOST, test], cwd=ROOT, capture_output=True, text=True,
                            errors='replace', timeout=60)

@@ -24,6 +24,7 @@
 #include <string.h>
 
 #include "pad.h"
+#include "net.h"
 #include "recomp_types.h"
 
 /* The game's key table (Keyboard Settings and Player Controls write it). */
@@ -148,7 +149,8 @@ static void set_key(int vk, int down) {
     if (vk <= 0 || vk > 255) return;
     if (down) InterlockedIncrement(&g_held[vk]);
     else InterlockedDecrement(&g_held[vk]);
-    if (g_wnd) PostMessageA(g_wnd, down ? WM_KEYDOWN : WM_KEYUP, vk, down ? 1 : 0xC0000001u);
+    /* Online the pad is only sampled (net.c): a posted key would reach one PC's game. */
+    if (g_wnd && !net_active()) PostMessageA(g_wnd, down ? WM_KEYDOWN : WM_KEYUP, vk, down ? 1 : 0xC0000001u);
 }
 
 /* One poll: press and release keys to match the controller. `g` is NULL

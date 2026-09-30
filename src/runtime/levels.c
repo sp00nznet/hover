@@ -23,6 +23,7 @@
 #include <time.h>
 
 #include "levels.h"
+#include "net.h"
 #include "recomp_types.h"
 
 #define G_LEVEL      0x0046049Cu   /* current level, 0-based */
@@ -107,6 +108,7 @@ uint32_t levels_seed(void) {
     g_seed = g_pinned ? g_pin : (uint32_t)time(NULL);
     int level = (int)MEM32(G_LEVEL);
     g_demo = level == 20;                      /* small.maz, the attract loop: not a level to keep */
+    net_level_loading(g_demo);
     if (level >= 0 && level < 20) g_level = level;
     if (g_restore_start) {                     /* the saved level is loading: Start At back */
         MEM32(G_START_AT) = g_start_was;
@@ -136,15 +138,29 @@ static int parse_code(const char* s, int* level, uint32_t* seed) {
 
 /* Start a new game at `level` with `seed` pinned: borrow Start At for the
  * one new game (levels_seed puts it back as the level loads) and press F2. */
-static void play(int level, uint32_t seed) {
-    pin(1, seed);
-    g_start_was = MEM32(G_START_AT);
+static void start(int level, uint32_t seed) {
+    if (!g_restore_start) g_start_was = MEM32(G_START_AT);
     MEM32(G_START_AT) = (uint32_t)level + 1;
     g_restore_start = 1;
     PostMessageA(g_frame, WM_KEYDOWN, VK_F2, 1);
     PostMessageA(g_frame, WM_KEYUP, VK_F2, 0xC0000001u);
     fprintf(stderr, "[level] new game: level %d, seed %u\n", level + 1, seed);
 }
+
+static void play(int level, uint32_t seed) {
+    pin(1, seed);
+    start(level, seed);
+}
+
+/* Online (net.c): every PC plays the host's level on the host's seed, for
+ * this session only (hover.ini is left alone). */
+void levels_session(int level, uint32_t seed) {
+    g_pinned = 1;
+    g_pin = seed;
+    start(level, seed);
+}
+
+uint32_t levels_current_seed(void) { return g_pinned ? g_pin : (uint32_t)time(NULL); }
 
 /* ------------------------------------------------------------ menu */
 

@@ -116,9 +116,9 @@ can draw any craft's view, and the simulation is deterministic per tick.
    for players in robot seats (the pickup check, 0x40CB40, and Use), a
    sprite for the human craft so the others can see player 1, and sounds
    for every local player.
-2. **Online, lockstep**: gate the 50 ms tick on everyone's inputs, feed every
-   seat from the tick's input record, UDP with redundancy, a desync hash.
-   Direct IP first (LAN, Tailscale), a small relay with join codes after.
+2. **Online, lockstep**: in (gate, per-tick inputs, relay, desync check).
+   Next: a small relay with join codes (no port forwarding), leaving
+   cleanly, and locking the game's own Start/Pause menu items while online.
 3. **Teams and modes**: players on both teams (the flag rule goes by class,
    0x414470: make it go by seat), co-op against the robots, free-for-all.
 4. **16 players, drop-in/out**: a seat nobody holds is a robot again; a

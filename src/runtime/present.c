@@ -29,6 +29,7 @@
 #include <string.h>
 
 #include "present.h"
+#include "net.h"
 
 typedef HRESULT (WINAPI *compile_fn)(LPCVOID, SIZE_T, LPCSTR, const void*, void*, LPCSTR, LPCSTR,
                                      UINT, UINT, ID3DBlob**, ID3DBlob**);
@@ -393,7 +394,7 @@ static LRESULT CALLBACK proc(HWND h, UINT m, WPARAM w, LPARAM l) {
     case WM_KEYUP:
         if (m == WM_KEYDOWN && w == VK_F11) { set_fullscreen(!g_full); return 0; }
         if (m == WM_KEYDOWN && w == VK_ESCAPE && g_full) { set_fullscreen(0); return 0; }
-        PostMessageA(g_frame, m, w, l);
+        if (!net_active()) PostMessageA(g_frame, m, w, l);   /* online, keys are sampled, not sent */
         return 0;
     case WM_SYSKEYDOWN:
         if (w == VK_RETURN) { set_fullscreen(!g_full); return 0; }   /* Alt+Enter */
@@ -414,7 +415,7 @@ static LRESULT CALLBACK proc(HWND h, UINT m, WPARAM w, LPARAM l) {
         /* Only a real switch reaches the game (host.c drops the rest). */
         fprintf(stderr, "[present] %s the foreground%s\n", w ? "has" : "lost",
                 g_pause_bg ? "" : " (the game keeps running)");
-        if (g_pause_bg) SendMessageA(g_frame, WM_ACTIVATEAPP, w, PRESENT_REAL_ACTIVATION);
+        if (g_pause_bg && !net_active()) SendMessageA(g_frame, WM_ACTIVATEAPP, w, PRESENT_REAL_ACTIVATION);
         break;
     case WM_CLOSE:
         PostMessageA(g_frame, WM_CLOSE, 0, 0);   /* the game asks, saves and exits */

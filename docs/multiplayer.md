@@ -108,26 +108,60 @@ Checked headless: 2 and 4 players on a pinned seed, each view distinct and
 following its own craft (docs: the conformance run has a 2-player run), and
 windowed at the console (1824x685 for two players on a 1920x1080 monitor).
 
-## Online play (the plan)
+## Online play (in)
 
-Lockstep: every PC runs the same world from the same inputs, and only the
-inputs cross the network.
+`src/runtime/net.c`. Lockstep: every PC runs the same world from the same
+inputs, and only the inputs cross the network.
 
-1. **Gate the tick.** Shim `timeSetEvent`; a host thread calls the game's
-   callback every 50 ms, but only once every peer's inputs for that tick
-   have arrived. Stall, never skip.
-2. **Inputs by tick.** Each peer sends its local seats' controls for tick
-   N+3 (turn, thrust, buttons), with the last few ticks repeated for loss.
-   Seat 0 (the human) is fed through the key shims from the tick's record,
-   not the live keyboard; `seat_think` reads the record instead of the pad.
-3. **Session.** The host picks the seed and the seats; everyone starts the
-   game at tick 0 with pause-on-focus off and the same settings. Dialogs
-   (High Score) are answered the same way everywhere.
-4. **Views.** Each PC draws only its own players' seats, so "four on this PC,
-   four on that one" is eight seats in one world, split four ways on each
-   screen.
-5. **Desync check.** Hash every craft's position and heading every second
-   and compare; a mismatch stops the game with the tick it happened.
-6. **Joining late** (16 players, drop-in/out): a joiner replays the session's
-   inputs from tick 0 at full speed, or receives a snapshot; a seat nobody
-   holds is a robot again.
+**Starting one.** The host chooses *Recomp > Multiplayer > Host an online
+game* (or `--host [PORT]`, default UDP 7795, `--clients N` for how many PCs
+to wait for); each other PC copies the host's address and chooses *Join*
+(or `--join HOST[:PORT]`). A PC brings as many local players as its split
+screen is set to (`--local N`), up to 4; the host's first player is seat 1
+(the game's own hovercraft), every other player a robot seat. When the last
+PC joins, every PC starts the same new game: the host's *Start At* level on
+the host's seed.
+
+**How it stays in step.**
+
+- *The gate.* Online, the game's 50 ms timer is the host's: `timeSetEvent`
+  for the tick callback (0x00408AA0) is taken over, and a driver thread
+  calls the game's callback for tick N only once tick N-1 has been handled
+  (the flag at `[0x004C4CE4]` is clear again) and every seat's input for
+  tick N has arrived. It stalls rather than skips, and never bursts to catch
+  up. Tick 0 is the first tick of the session's first real level: the
+  attract demo, which may still be running when the session starts, keeps
+  its own timer.
+- *Inputs.* Between ticks each PC samples its players for tick N+3 (turn,
+  thrust, jump/wall/cloak) and sends them; every packet repeats the last 8
+  ticks, so a lost packet costs nothing. Clients send to the host, and the
+  host relays every seat to every client, also while it waits. Seat 1's
+  steering reaches the game through the key shims from the tick's record,
+  its jump/wall/cloak are posted to the view on the tick they are pressed,
+  and robot seats read the record in `seat_think`. While online, nothing
+  else of the keyboard or pads reaches the game: the presenter, the pad
+  thread and scripted keys only feed the sampler. The joystick flag
+  (`[0x0046070C]`) is cleared each tick, because the tick handler would
+  otherwise poll a local joystick.
+- *The desync check.* Every 20 ticks each PC hashes every thinker (vtable,
+  position, heading, turn, thrust); the host compares against every client
+  and forwards its hash so every client compares too. A mismatch stops the
+  game on every PC and names the tick.
+
+**Checked:** two instances on one PC over localhost, both driving: in sync
+through tick 400, headless and with two presenter windows. A deliberate
+one-unit nudge of one PC's craft at tick 100 (`--net-desync-test 100`) is
+reported at tick 120 on both. Both are conformance milestones.
+
+**Not yet:**
+
+- Leaving: a PC that quits stalls everyone at "waiting for the other
+  players"; restart to leave. Drop-in/out is the next step (a seat nobody
+  holds reverts to a robot at an agreed tick; a joiner replays the inputs).
+- Addresses: direct IP only (a LAN, Tailscale, or UDP port 7795 forwarded to
+  the host). A relay with join codes would remove the port forwarding.
+- The game's own menu (*Start Game*, *Pause*) still works with the mouse on
+  one PC and would desync the session: leave it alone while online.
+- Everything the split screen lacks (players 2+'s HUD, powerups, player 1's
+  missing sprite) applies online too.
+- Every PC needs the same build and the same game files.

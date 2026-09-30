@@ -11,3 +11,5 @@ void     levels_menu(HMENU recomp);                          /* the Level submen
 void     levels_update_menu(HMENU popup);
 int      levels_command(UINT id);
 int      levels_selftest(void);
+void     levels_session(int level, uint32_t seed);           /* online: the host's level and seed */
+uint32_t levels_current_seed(void);                          /* the pinned seed, or the time */

@@ -10,6 +10,14 @@ versions follow [SemVer](https://semver.org/).
   the startup check is answered; rendering is unchanged.
 
 ### Added
+- Online play: lockstep over UDP. The host takes over the game's 50 ms tick
+  and runs it only when every seat's input has arrived; inputs are sampled
+  3 ticks ahead and repeated for loss; the host relays everyone to
+  everyone (up to 16 seats, 1-4 per PC with split screen); every 20 ticks
+  each PC hashes every craft and a mismatch stops the game. Recomp >
+  Multiplayer > Host / Join, `--host`, `--join`, `--clients`, `--local`
+  ([docs/multiplayer.md](docs/multiplayer.md)).
+- Headless runs get a scratch profile per process, so two can run at once.
 - Split screen for 2 to 4 players: players 2-4 drive robots of their own
   (one extra flag-runner per player in every level) with controllers 2-4,
   each with their own view. The frame draw runs once per player with the

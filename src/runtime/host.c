@@ -12,6 +12,7 @@
  */
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+#include <mmsystem.h>
 #include <dwmapi.h>
 #include <tlhelp32.h>
 #include <shellapi.h>
@@ -26,6 +27,7 @@
 #include "present.h"
 #include "levels.h"
 #include "mp.h"
+#include "net.h"
 
 extern const uint32_t hover_entry_va;     /* recomp_dispatch.c */
 
@@ -123,6 +125,8 @@ static HWND g_main;                      /* the "Hover!" frame window */
 static char g_ini[MAX_PATH];             /* hover.ini, beside the exe */
 static int  g_present;                   /* the presenter shows the game (present.c) */
 static int  g_hidden;                    /* the frame is cloaked: headless, or the presenter */
+static int  g_net_port, g_net_clients = 1, g_net_local; /* --host / --join, started with the frame */
+static const char* g_net_join;
 
 /* ------------------------------------------------------------ Recomp menu */
 
@@ -221,8 +225,11 @@ static void shim_CreateWindowExA(void) {
     if (is_main && h) {
         g_main = h;
         if (!g_hidden) subclass(h);              /* hidden did it above */
+        net_init(g_ini, h, g_headless);
         recomp_menu(h);
         levels_attach(h, set_title);
+        if (g_net_port) net_host(g_net_port, g_net_clients, g_net_local ? g_net_local : mp_local_count());
+        if (g_net_join) net_join(g_net_join, g_net_local ? g_net_local : mp_local_count());
         if (!g_headless) pad_start(g_ini, h);    /* headless reads no real input */
         if (g_present) {
             /* The presenter's menu bar holds the frame's own popups, so the
@@ -242,6 +249,25 @@ static void shim_CreateWindowExA(void) {
     fprintf(stderr, "[window] CreateWindowExA(\"%s\", %dx%d) -> %shwnd %p\n",
             a[2] >> 16 ? gstr(a[2]) : "#", (int)a[6], (int)a[7], g_hidden && top ? "cloaked " : "", (void*)h);
     RET((uintptr_t)h, 12);
+}
+
+/* Online play (net.c) takes over the game's 50 ms timer, so that a tick
+ * runs only when every player's inputs for it are here, and learns the view
+ * the tick's WM_USER goes to. Offline, all three are the real calls. */
+static void shim_timeSetEvent(void) {
+    uint32_t id;
+    if (net_timer_set(ARG(2), ARG(3), &id)) { RET(id, 5); return; }
+    RET(timeSetEvent(ARG(0), ARG(1), (LPTIMECALLBACK)(uintptr_t)ARG(2), ARG(3), ARG(4)), 5);
+}
+
+static void shim_timeKillEvent(void) {
+    if (net_timer_kill(ARG(0))) { RET(TIMERR_NOERROR, 1); return; }
+    RET(timeKillEvent(ARG(0)), 1);
+}
+
+static void shim_PostMessageA(void) {
+    net_saw_post((HWND)(uintptr_t)ARG(0), ARG(1));
+    RET(PostMessageA((HWND)(uintptr_t)ARG(0), ARG(1), ARG(2), ARG(3)), 4);
 }
 
 /* Level seeds (levels.c): time() reads the clock only through GetLocalTime,
@@ -330,11 +356,12 @@ static DWORD WINAPI key_thread(LPVOID p) {
     while (!g_main || GetTickCount() - t0 < g_keys[i].at) Sleep(5);
     int vk = g_keys[i].vk;
     fprintf(stderr, "[input] key 0x%02X down at %lu ms\n", vk, GetTickCount() - t0);
+    /* Online, a key is only an input to sample (net.c): never posted. */
     InterlockedIncrement(&g_held[vk]);
-    PostMessageA(g_main, WM_KEYDOWN, vk, 1);
+    if (!net_active()) PostMessageA(g_main, WM_KEYDOWN, vk, 1);
     Sleep(g_keys[i].hold);
     InterlockedDecrement(&g_held[vk]);
-    PostMessageA(g_main, WM_KEYUP, vk, 0xC0000001u);
+    if (!net_active()) PostMessageA(g_main, WM_KEYUP, vk, 0xC0000001u);
     return 0;
 }
 
@@ -351,13 +378,15 @@ static int key_down(int vk) {
 }
 
 static void shim_GetAsyncKeyState(void) {
-    int vk = ARG(0) & 0xFF;
+    int vk = ARG(0) & 0xFF, net;
+    if (net_key(vk, &net)) { RET(net ? 0x8001u : 0, 1); return; }   /* online: the tick's record */
     SHORT s = g_held[vk] || pad_held(vk) ? (SHORT)0x8001 : real_keys() ? GetAsyncKeyState(vk) : 0;
     RET((uint16_t)s, 1);
 }
 
 static void shim_GetKeyState(void) {
-    int vk = ARG(0) & 0xFF;
+    int vk = ARG(0) & 0xFF, net;
+    if (net_key(vk, &net)) { RET(net ? 0xFFFF8000u : 0, 1); return; }
     SHORT s = g_held[vk] || pad_held(vk) ? (SHORT)0x8000 : real_keys() ? GetKeyState(vk) : 0;
     RET((uint32_t)(int32_t)s, 1);
 }
@@ -411,7 +440,14 @@ static void save_bmp(const char* path) {
     fprintf(stderr, "[capture] frame %ld saved to %s\n", g_frames, path);
 }
 
+static char g_headless_key[96];          /* this run's scratch HKCU (main) */
+
 static void finish(void) {
+    if (g_headless_key[0]) {             /* the real HKCU again, then drop the scratch copy */
+        RegOverridePredefKey(HKEY_CURRENT_USER, NULL);
+        RegDeleteTreeA(HKEY_CURRENT_USER, g_headless_key);
+        g_headless_key[0] = 0;
+    }
     if (g_ffmpeg) {
         _pclose(g_ffmpeg);
         g_ffmpeg = NULL;
@@ -561,6 +597,9 @@ static void shim_ExitProcess(void) {
     { "CreateWindowExA", shim_CreateWindowExA }, \
     { "GetLocalTime", shim_GetLocalTime }, \
     { "GetTimeZoneInformation", shim_GetTimeZoneInformation }, \
+    { "timeSetEvent", shim_timeSetEvent }, \
+    { "timeKillEvent", shim_timeKillEvent }, \
+    { "PostMessageA", shim_PostMessageA }, \
     { "ExitProcess", shim_ExitProcess }
 
 /* The frame cloaked: the presenter shows the game, or nothing does. */
@@ -663,6 +702,11 @@ int main(int argc, char** argv) {
         else if (!strcmp(argv[i], "--levels-selftest")) levels_test = 1;
         else if (!strcmp(argv[i], "--classic")) classic = 1;
         else if (!strcmp(argv[i], "--players") && i + 1 < argc) players = atoi(argv[++i]);
+        else if (!strcmp(argv[i], "--host")) g_net_port = i + 1 < argc && argv[i + 1][0] != '-' ? atoi(argv[++i]) : 7795;
+        else if (!strcmp(argv[i], "--clients") && i + 1 < argc) g_net_clients = atoi(argv[++i]);
+        else if (!strcmp(argv[i], "--join") && i + 1 < argc) g_net_join = argv[++i];
+        else if (!strcmp(argv[i], "--local") && i + 1 < argc) g_net_local = atoi(argv[++i]);
+        else if (!strcmp(argv[i], "--net-desync-test") && i + 1 < argc) net_desync_test(atoi(argv[++i]));
         else if (!strcmp(argv[i], "--seed") && i + 1 < argc) { seed = strtoul(argv[++i], NULL, 10); seed_pinned = 1; }
         else if (!strcmp(argv[i], "--key") && i + 1 < argc) {
             if (!parse_key(argv[++i])) { fprintf(stderr, "bad --key %s\n", argv[i]); return 1; }
@@ -694,6 +738,7 @@ int main(int argc, char** argv) {
         else {
             printf("usage: hover [--run] [--headless] [--record out.mp4] [--frames N] [--diff A,B]\n"
                    "             [--key NAME@MS[+HOLD]] [--seed N] [--players N] [--classic]\n"
+                   "             [--host [PORT]] [--clients N] [--join HOST[:PORT]] [--local N]\n"
                    "             [--game game\\hover] [--watchdog S] [--native-trace] [--callbacks]\n");
             recomp_trace_help();
             return argv[i][1] == 'h' || argv[i][2] == 'h' ? 0 : 1;
@@ -718,8 +763,12 @@ int main(int argc, char** argv) {
      * a scratch key that is emptied every start. */
     if (g_headless) {
         HKEY k;
-        RegDeleteTreeA(HKEY_CURRENT_USER, "Software\\hover-recomp\\headless");
-        if (RegCreateKeyA(HKEY_CURRENT_USER, "Software\\hover-recomp\\headless", &k) == ERROR_SUCCESS)
+        /* One per process: two headless runs at once (an online test on one
+         * PC) must not empty each other's profile. */
+        _snprintf(g_headless_key, sizeof g_headless_key - 1, "Software\\hover-recomp\\headless\\%lu",
+                  GetCurrentProcessId());
+        RegDeleteTreeA(HKEY_CURRENT_USER, g_headless_key);
+        if (RegCreateKeyA(HKEY_CURRENT_USER, g_headless_key, &k) == ERROR_SUCCESS)
             RegOverridePredefKey(HKEY_CURRENT_USER, k);
     }
     native32_init();

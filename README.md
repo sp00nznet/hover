@@ -24,11 +24,11 @@ mode).
 | Sound and music | `waveOut` and MIDI go to the real devices. Played in a windowed run; not checked note by note |
 | Windowed mode | plays (keyboard and the original's menus), plus a **Recomp** menu for the port's own settings |
 | Split screen | **2 to 4 players on one PC**: players 2-4 drive robots of their own with controllers 2-4 (player 2 also I/J/K/L), each with their own view; they play for the robots' team. Their HUD is still player 1's, and they have no powerups yet ([docs/multiplayer.md](docs/multiplayer.md)) |
-| Online play | researched: the simulation is deterministic per tick, so lockstep over UDP is the plan ([docs/multiplayer.md](docs/multiplayer.md)) |
+| Online play | **lockstep over UDP**, up to 16 seats (each PC 1-4 of them, split screen), with a desync check. Direct IP (LAN, Tailscale, port forwarding); no drop-in/out yet: a PC that leaves stalls the game ([docs/multiplayer.md](docs/multiplayer.md)) |
 | Level seeds | pinned, shown in the title, saved, and shared as codes like `L3-1789123456`; same seed, same level, pixel for pixel ([docs/levels.md](docs/levels.md)) |
 | Xbox controllers | XInput pads press the game's own bound keys; layout, deadzone and slot in `hover.ini` and the Recomp menu ([docs/controller.md](docs/controller.md)). Checked by a self-test on synthetic pad states; **not yet tried with a real pad** |
 | Headless mode | `--headless --record out.mp4`, with `--key` for scripted input. Never shows or activates a window ([docs/host.md](docs/host.md)) |
-| Conformance harness | **16/16** milestones (boot, start, drive, 1,000 frames on a pinned seed, controller mapping, share codes, Recomp menu, a 2-player split-screen run), 0 lift errors, 0 unresolvable tail calls ([tools/conformance.py](tools/conformance.py)) |
+| Conformance harness | **19/19** milestones (boot, start, drive, 1,000 frames on a pinned seed, controller mapping, share codes, Recomp menu, a 2-player split screen, and an online host + client on this PC: in step through tick 400, and a deliberate desync caught), 0 lift errors, 0 unresolvable tail calls ([tools/conformance.py](tools/conformance.py)) |
 
 One toolkit fix was needed, [pcrecomp#24](https://github.com/sp00nznet/pcrecomp/pull/24), open until it merges
 ([docs/toolkit.md](docs/toolkit.md)).
@@ -153,7 +153,7 @@ wall, B cloaks, Start pauses, Back starts a new game.
 Settings live in `build\hover.ini` (written with its defaults on first
 run) and in the game's **Recomp** menu: *Level* (seeds, saved levels, share
 codes), *Video* (filter, window size, fullscreen, CRT, dithering) and
-*Controller*, and *Multiplayer* (1-4 players, split screen). F11 or Alt+Enter toggles fullscreen. Switching to another
+*Controller*, and *Multiplayer* (1-4 players split screen; host or join an online game). F11 or Alt+Enter toggles fullscreen. Switching to another
 window pauses the game, as the original did; F3 continues.
 
 | Flag | |
@@ -169,6 +169,8 @@ window pauses the game, as the original did; F3 continues.
 | `--native-trace`, `--callbacks` | one line per call into Windows, or back from it |
 | `--seed N` | pin the level seed for this run (the ini's `[levels] seed` otherwise) |
 | `--players N` | split screen for N players (1-4) |
+| `--host [PORT]`, `--clients N` | host an online game (UDP 7795) for N other PCs |
+| `--join HOST[:PORT]`, `--local N` | join one, bringing N local players |
 | `--classic` | the game's own window instead of the presenter |
 | `--shot N:file.bmp` | save frame N exactly as the game drew it |
 | `--pad-selftest`, `--levels-selftest` | check the controller mapping or the share codes, then exit |
