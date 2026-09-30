@@ -47,8 +47,8 @@ mapped by hand, and running only lifted code (the guest `.text` is mapped
 non-executable).
 
 - **Guest → Windows.** Lifted `call [iat]` reaches native32's bridge, which
-  calls the real function with the guest's stack slots. 339 of the 350
-  imports go straight to Windows; 11 are shimmed in the host (16 headless).
+  calls the real function with the guest's stack slots. 338 of the 350
+  imports go straight to Windows; 12 are shimmed in the host (17 headless).
 - **Windows → guest.** MFC's window procedure, the dialog procedure and the
   50 ms multimedia-timer callback fault on the non-executable guest code, and
   native32's handler enters the lifted function.

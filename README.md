@@ -17,7 +17,7 @@ mode).
 | P0: identify the binary | done: `HOVER.EXE`, MSVC 2.x + static MFC 3, no protection; `DASHRES.DLL` is resources only |
 | Function catalog (`disasm32`) | 5,090 functions, 96.6% of the code bytes |
 | Lift (`run_lift.py`) | **whole program**: 5,135 functions, 0 lift errors, 426K lines of C |
-| Host (`build/hover.exe`, 32-bit, pcrecomp `native32`) | 350 imports: 339 bound to real Windows, 11 shimmed. Nothing native from the original runs |
+| Host (`build/hover.exe`, 32-bit, pcrecomp `native32`) | 350 imports: 338 bound to real Windows, 12 shimmed. Nothing native from the original runs |
 | Graphics | GDI and DIB sections, as the original: nothing to replace |
 | Title / attract screen | **runs** |
 | Gameplay | F2 starts level 1; driving, turning, the radar, flags, pods and the opponents all run. A two-minute soak ran to the opponents winning, with no fault |
@@ -122,10 +122,9 @@ Until the jump-table fix ([pcrecomp#24](https://github.com/sp00nznet/pcrecomp/pu
    ```
    build\hover.exe
    ```
-   Expected: `[bind] 0x00400000: 339 native, 0 guest, 11 shimmed, 0 unresolved`
+   Expected: `[bind] 0x00400000: 338 native, 0 guest, 12 shimmed, 0 unresolved`
    and `(dry run: image mapped and bound; --run enters 0x0043FB73)`.
-7. Play: `build\hover.exe --run`. The original warns that you are "not
-   running a 256 color video driver"; click OK, it runs fine.
+7. Play: `build\hover.exe --run`.
 
 The usual trip-ups: `python` opening the Microsoft Store (that is Windows' alias
 placeholder; use `py -3`, or turn the alias off in *Settings > Apps > Advanced

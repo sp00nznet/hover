@@ -35,7 +35,7 @@ BASELINE = os.path.join(ROOT, 'conformance.json')
 # (name, what the host prints when it is reached). Order is boot order.
 MILESTONES = [
     ('image mapped, every import bound', r'\[bind\] 0x00400000: .* 0 unresolved'),
-    ('the 256-colour warning (the original says it too)', r'\[messagebox\] Hover!: We have detected'),
+    ('display check passes, no 256-colour warning', r'\[display\] the 256-colour check is answered'),
     ('frame window created', r'CreateWindowExA\("Hover!", 536x431\)'),
     ('dashboard art loaded (DASHRES.DLL)', r'LoadLibraryA\("dashres.dll"\) -> data file [0-9A-F]*[1-9A-F]'),
     ('Quick Help dialog at startup', r'\[headless\] dialog 115 '),

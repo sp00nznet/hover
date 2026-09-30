@@ -27,8 +27,6 @@
   helpers lift as no-ops, and three garbage decodes (`sti`, `fisttp`) sit in
   data the catalog took for code. No run has been seen to reach them.
 - **Joystick.** `joyGetPos` goes to the real API; untested.
-- **The 256-colour warning** at every start is the original's own message.
-  It could be skipped, but it is part of what the game does.
 
 ## Out of scope
 

@@ -85,10 +85,30 @@ static void shim_LoadLibraryA(void) {
     RET((uintptr_t)h, 1);
 }
 
+/* The startup display check (0x0041CEE3, and 0x0041CF6D, the catalog's entry
+ * inside it) asks the screen DC for RC_PALETTE and a 256-entry palette, and
+ * on every true-colour display since the late 90s says "We have detected that
+ * you are not running a 256 color video driver". The game renders into its
+ * own 8-bit DIBs either way, so only that check is told what it wants to
+ * hear; the renderer's own GetDeviceCaps calls see the real display. */
+static void shim_GetDeviceCaps(void) {
+    HDC dc = (HDC)(uintptr_t)ARG(0);
+    int index = (int)ARG(1);
+    int r = GetDeviceCaps(dc, index);
+    if (g_cur_func == 0x0041CEE3u || g_cur_func == 0x0041CF6Du) {
+        if (index == RASTERCAPS) r |= RC_PALETTE;
+        else if (index == SIZEPALETTE) {
+            r = 256;
+            fprintf(stderr, "[display] the 256-colour check is answered: no warning\n");
+        }
+    }
+    RET((uint32_t)r, 2);
+}
+
 /* ------------------------------------------------------------ headless */
 
 /* --headless: nothing reaches the screen (REPO_RULES section 13). The game's
- * own message boxes ("not running a 256 color video driver") go to stderr. */
+ * own message boxes go to stderr. */
 static void shim_MessageBoxA(void) {
     fprintf(stderr, "[messagebox] %s: %s\n", gstr(ARG(2)), gstr(ARG(1)));
     RET(IDOK, 4);
@@ -242,7 +262,8 @@ static void shim_DialogBoxParamA(void) {
  * 3D view (512 wide) and the dashboard pieces, each on its own. A cloaked
  * window cannot be read back, so every blit that lands on the game window is
  * repeated onto a shadow DIB of its client area, and that is what --record
- * pipes to ffmpeg (windowed runs too, so both record the same way). A "frame" is a blit of the 3D view (at least 256x128).
+ * pipes to ffmpeg (windowed runs too, so both record the same way). A
+ * "frame" is a blit of the 3D view (at least 256x128).
  * ponytail: only BitBlt/StretchBlt are mirrored; GDI text or lines drawn
  * straight onto the window DC are not in the recording. Mirror those too if a
  * screen ever needs them (the menus between levels, say). */
@@ -365,6 +386,7 @@ static void shim_ExitProcess(void) {
     { "GetModuleFileNameA", shim_GetModuleFileNameA }, \
     { "GetCommandLineA", shim_GetCommandLineA }, \
     { "LoadLibraryA", shim_LoadLibraryA }, \
+    { "GetDeviceCaps", shim_GetDeviceCaps }, \
     { "GetAsyncKeyState", shim_GetAsyncKeyState }, \
     { "GetKeyState", shim_GetKeyState }, \
     { "BitBlt", shim_BitBlt }, \

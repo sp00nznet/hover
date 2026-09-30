@@ -5,6 +5,10 @@ versions follow [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Removed
+- The "not running a 256 color video driver" message at every start. Only
+  the startup check is answered; rendering is unchanged.
+
 ### Added
 - The whole pipeline, from your copy to a running executable:
   `tools/gamefiles.py` (drive, folder, zip or BIN/CUE/ISO into `game\hover`),
