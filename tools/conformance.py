@@ -45,6 +45,8 @@ MILESTONES = [
     ('UP: drive forward', r'\[input\] key 0x26 down'),
     ('the hovercraft moved', r'\[diff\] ([2-9]\d|100)% of the window changed'),
     ('1000 frames with no fault', r'\[capture\] 1000 frames: stopping'),
+    ('controller mapping self-test', r'\[pad\] selftest OK'),
+    ('Recomp menu on the frame', r'\[menu\] Recomp menu added'),
 ]
 
 # Milliseconds from entry: F2 once the menu is up, then UP held long enough
@@ -62,6 +64,11 @@ def boot(seconds):
     except subprocess.TimeoutExpired as e:
         out, code = (e.stdout or '') + (e.stderr or ''), 'timeout'
         out = out if isinstance(out, str) else out.decode(errors='replace')
+    # The controller mapping has no controller to test against, so the host
+    # tests it on synthetic pad states (pad.c, pad_selftest).
+    pad = subprocess.run([HOST, '--pad-selftest'], cwd=ROOT, capture_output=True, text=True,
+                         errors='replace', timeout=60)
+    out += pad.stdout + pad.stderr
     passed = [name for name, pat in MILESTONES if re.search(pat, out)]
     last = [l for l in out.splitlines() if l.startswith(('===', '[watchdog]', 'ICALL', 'ITAIL', '[diff]'))]
     return passed, code, last[:3]

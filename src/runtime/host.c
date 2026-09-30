@@ -21,6 +21,7 @@
 
 #include "native32.h"
 #include "recomp_trace.h"
+#include "pad.h"
 
 extern const uint32_t hover_entry_va;     /* recomp_dispatch.c */
 
@@ -115,19 +116,33 @@ static void shim_MessageBoxA(void) {
 }
 
 static HWND g_main;                      /* the "Hover!" frame window */
+static char g_ini[MAX_PATH];             /* hover.ini, beside the exe */
 
-/* Headless, the game never hears that it lost activation. It pauses when it
+/* The host's subclass of the game's top-level windows. Every mode: the
+ * frame's "Recomp" menu (pad.c), whose items MFC would otherwise grey out
+ * and whose commands it would drop.
+ *
+ * Headless, the game never hears that it lost activation. It pauses when it
  * does, as the original does in the background: WM_ACTIVATEAPP(FALSE) kills
  * the multimedia timer that paces its frame loop. A headless run's window is
  * never the active one, and whenever the desktop's foreground moved (a person
  * using the machine), a run parked in GetMessage. So its top-level windows
  * are subclassed here, in the host, and the deactivations stop at the host. */
-static LRESULT CALLBACK always_active(HWND h, UINT m, WPARAM w, LPARAM l) {
+static LRESULT CALLBACK host_wndproc(HWND h, UINT m, WPARAM w, LPARAM l) {
     WNDPROC prev = (WNDPROC)GetPropA(h, "hover.prev");
-    if ((m == WM_ACTIVATEAPP && !w) || (m == WM_ACTIVATE && LOWORD(w) == WA_INACTIVE))
-        return 0;
-    if (m == WM_NCACTIVATE && !w) return DefWindowProcA(h, m, w, l);
-    return CallWindowProcA(prev, h, m, w, l);
+    if (g_headless) {
+        if ((m == WM_ACTIVATEAPP && !w) || (m == WM_ACTIVATE && LOWORD(w) == WA_INACTIVE))
+            return 0;
+        if (m == WM_NCACTIVATE && !w) return DefWindowProcA(h, m, w, l);
+    }
+    if (m == WM_COMMAND && HIWORD(w) == 0 && pad_command(LOWORD(w))) return 0;
+    LRESULT r = CallWindowProcA(prev, h, m, w, l);
+    if (m == WM_INITMENUPOPUP) pad_update_menu((HMENU)w);
+    return r;
+}
+
+static void subclass(HWND h) {
+    SetPropA(h, "hover.prev", (HANDLE)SetWindowLongPtrA(h, GWLP_WNDPROC, (LONG_PTR)host_wndproc));
 }
 
 /* Every mode: the host needs the game's frame window (capture, keys).
@@ -145,14 +160,20 @@ static void shim_CreateWindowExA(void) {
     if (g_headless && top && h) {
         BOOL on = TRUE;
         DwmSetWindowAttribute(h, DWMWA_CLOAK, &on, sizeof on);
-        SetPropA(h, "hover.prev", (HANDLE)SetWindowLongPtrA(h, GWLP_WNDPROC, (LONG_PTR)always_active));
+        subclass(h);
         if (a[3] & WS_VISIBLE) ShowWindow(h, SW_SHOWNOACTIVATE);
     }
     mach_enter();
     fprintf(stderr, "[window] CreateWindowExA(\"%s\", %dx%d) -> %shwnd %p\n",
             ARG(2) >> 16 ? gstr(ARG(2)) : "#", (int)ARG(6), (int)ARG(7),
             g_headless && top ? "cloaked " : "", (void*)h);
-    if (ARG(2) >> 16 && !strcmp(gstr(ARG(2)), "Hover!")) g_main = h;
+    if (ARG(2) >> 16 && !strcmp(gstr(ARG(2)), "Hover!") && h) {
+        g_main = h;
+        if (!g_headless) subclass(h);            /* headless did it above */
+        pad_add_menu(h);
+        /* Headless reads no real input: the pad stays off. */
+        if (!g_headless) pad_start(g_ini, h);
+    }
     RET((uintptr_t)h, 12);
 }
 
@@ -236,13 +257,13 @@ static DWORD WINAPI key_thread(LPVOID p) {
 
 static void shim_GetAsyncKeyState(void) {
     int vk = ARG(0) & 0xFF;
-    SHORT s = g_held[vk] ? (SHORT)0x8001 : g_headless ? 0 : GetAsyncKeyState(vk);
+    SHORT s = g_held[vk] || pad_held(vk) ? (SHORT)0x8001 : g_headless ? 0 : GetAsyncKeyState(vk);
     RET((uint16_t)s, 1);
 }
 
 static void shim_GetKeyState(void) {
     int vk = ARG(0) & 0xFF;
-    SHORT s = g_held[vk] ? (SHORT)0x8000 : g_headless ? 0 : GetKeyState(vk);
+    SHORT s = g_held[vk] || pad_held(vk) ? (SHORT)0x8000 : g_headless ? 0 : GetKeyState(vk);
     RET((uint32_t)(int32_t)s, 1);
 }
 
@@ -476,12 +497,13 @@ static DWORD WINAPI watchdog(LPVOID unused) {
 
 int main(int argc, char** argv) {
     const char* game = "game\\hover";
-    int run = 0;
+    int run = 0, pad_test = 0;
     for (int i = 1; i < argc; i++) {
         int n = recomp_trace_arg(argc, argv, i);
         if (n) { i += n - 1; continue; }
         if (!strcmp(argv[i], "--run")) run = 1;
         else if (!strcmp(argv[i], "--headless")) g_headless = 1;
+        else if (!strcmp(argv[i], "--pad-selftest")) pad_test = 1;
         else if (!strcmp(argv[i], "--key") && i + 1 < argc) {
             if (!parse_key(argv[++i])) { fprintf(stderr, "bad --key %s\n", argv[i]); return 1; }
         }
@@ -510,6 +532,10 @@ int main(int argc, char** argv) {
             return argv[i][1] == 'h' || argv[i][2] == 'h' ? 0 : 1;
         }
     }
+    /* hover.ini lives beside the exe: settings belong to this build of the
+     * host, not to the game folder (which is the user's own copy). */
+    GetModuleFileNameA(NULL, g_ini, MAX_PATH);
+    strcpy(strrchr(g_ini, '\\') + 1, "hover.ini");
     GetFullPathNameA(game, MAX_PATH - 1, g_game, NULL);
     if (g_game[strlen(g_game) - 1] != '\\') strcat(g_game, "\\");
     _snprintf(g_guest_exe, sizeof g_guest_exe - 1, "%sHOVER.EXE", g_game);
@@ -537,6 +563,7 @@ int main(int argc, char** argv) {
     printf("  mapped HOVER.EXE: 0x%08X-0x%08X\n", HOVER_BASE, HOVER_BASE + span);
     if (native32_bind(HOVER_BASE, shims, nshims) != 0) return 1;
 
+    if (pad_test) return pad_selftest();
     if (!run) {
         printf("\n(dry run: image mapped and bound; --run enters 0x%08X)\n", hover_entry_va);
         return 0;

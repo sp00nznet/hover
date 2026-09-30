@@ -10,6 +10,15 @@ versions follow [SemVer](https://semver.org/).
   the startup check is answered; rendering is unchanged.
 
 ### Added
+- Xbox controller support (XInput): the pad presses the keys the game has
+  bound, read live from its key table, so in-game rebinding carries over.
+  Pause and new game on Start/Back ([docs/controller.md](docs/controller.md)).
+- `hover.ini` beside the exe, written with its defaults on first run: the
+  `[pad]` layout, deadzone, trigger threshold and controller slot.
+- A **Recomp** menu on the game's menu bar: controller status and toggle,
+  deadzone and slot presets, edit and reload `hover.ini`.
+- `--pad-selftest`, and two conformance milestones (controller mapping,
+  Recomp menu): 13/13.
 - The whole pipeline, from your copy to a running executable:
   `tools/gamefiles.py` (drive, folder, zip or BIN/CUE/ISO into `game\hover`),
   `tools/catalog.py` (pcrecomp `disasm32`: 5,090 functions), `run_lift.py`

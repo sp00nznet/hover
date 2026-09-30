@@ -26,6 +26,7 @@ endif()
 
 add_executable(hover
   src/runtime/host.c
+  src/runtime/pad.c
   ${PCRECOMP}/runtime/native32/native32.c
   ${PCRECOMP}/runtime/recomp32/image_loader.c
   ${PCRECOMP}/runtime/recomp32/recomp_trace.c
@@ -43,8 +44,8 @@ target_link_options(hover PRIVATE /BASE:0x60000000 /FIXED:NO /DYNAMICBASE:NO
                                   /NXCOMPAT /STACK:0x1000000 /MANIFESTUAC:NO)
 set(GEN_OPT "/O2" CACHE STRING "optimisation for the generated C")
 set_source_files_properties(${GEN_SOURCES} PROPERTIES COMPILE_OPTIONS "/w;${GEN_OPT}")
-set_source_files_properties(src/runtime/host.c PROPERTIES COMPILE_OPTIONS "/W3")
-target_link_libraries(hover PRIVATE user32 gdi32 kernel32 advapi32 winmm dwmapi)
+set_source_files_properties(src/runtime/host.c src/runtime/pad.c PROPERTIES COMPILE_OPTIONS "/W3")
+target_link_libraries(hover PRIVATE user32 gdi32 kernel32 advapi32 winmm dwmapi shell32)
 
 option(HOVER_TRACE "record a ring buffer of lifted function entries" OFF)
 if(HOVER_TRACE)

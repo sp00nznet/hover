@@ -22,9 +22,10 @@ mode).
 | Title / attract screen | **runs** |
 | Gameplay | F2 starts level 1; driving, turning, the radar, flags, pods and the opponents all run. A two-minute soak ran to the opponents winning, with no fault |
 | Sound and music | `waveOut` and MIDI go to the real devices. Played in a windowed run; not checked note by note |
-| Windowed mode | plays (keyboard and mouse, the original's window and menus) |
+| Windowed mode | plays (keyboard and mouse, the original's window and menus), plus a **Recomp** menu for the port's own settings |
+| Xbox controllers | XInput pads press the game's own bound keys; layout, deadzone and slot in `hover.ini` and the Recomp menu ([docs/controller.md](docs/controller.md)). Checked by a self-test on synthetic pad states; **not yet tried with a real pad** |
 | Headless mode | `--headless --record out.mp4`, with `--key` for scripted input. Never shows or activates a window ([docs/host.md](docs/host.md)) |
-| Conformance harness | **11/11** milestones (boot, start, drive, 1,000 frames), 0 lift errors, 0 unresolvable tail calls ([tools/conformance.py](tools/conformance.py)) |
+| Conformance harness | **13/13** milestones (boot, start, drive, 1,000 frames, controller mapping, Recomp menu), 0 lift errors, 0 unresolvable tail calls ([tools/conformance.py](tools/conformance.py)) |
 
 One toolkit fix was needed, [pcrecomp#24](https://github.com/sp00nznet/pcrecomp/pull/24), open until it merges
 ([docs/toolkit.md](docs/toolkit.md)).
@@ -143,6 +144,11 @@ py -3 tools\conformance.py                                    # milestones and l
 
 In the game: F2 starts, the arrow keys drive, F3 pauses, and the object is
 to collect your opponents' blue flags before they collect your red ones.
+With an Xbox controller: RT/LT or the left stick drive, A jumps, X drops a
+wall, B cloaks, Start pauses, Back starts a new game.
+
+Settings live in `build\hover.ini` (written with its defaults on first
+run) and in the game's **Recomp** menu ([docs/controller.md](docs/controller.md)).
 
 | Flag | |
 |---|---|
@@ -155,6 +161,7 @@ to collect your opponents' blue flags before they collect your red ones.
 | `--game DIR` | the game folder (default `game\hover`) |
 | `--watchdog S` | stop after S seconds and say where every thread was |
 | `--native-trace`, `--callbacks` | one line per call into Windows, or back from it |
+| `--pad-selftest` | check the controller mapping on synthetic pad states, then exit |
 
 `py -3 tools\addr2line.py ADDR ...` names host addresses from a fault report
 or a watchdog dump.

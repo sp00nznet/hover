@@ -12,15 +12,14 @@ Where the ideas come from: gunman's D3D11 presenter, SimCity 2000's frontend
 
 - **Merge the toolkit fix** ([pcrecomp#24](https://github.com/sp00nznet/pcrecomp/pull/24)) and drop the
   branch pin from `Setup.cmd`, the README and CI.
-- **`hover.ini` beside the exe**: one settings file for everything below
+- **`hover.ini` beside the exe** (started: `[pad]` is in): one settings file for everything below
   (`[video]`, `[audio]`, `[pad]`, `[levels]`, `[net]`), read and written with
   `Get/WritePrivateProfile*` as SimCity 2000 does. Command-line flags
   override it. Portable mode: the game's own registry settings move into
   the ini too (the headless profile trick already redirects HKCU).
-- **A "Recomp" menu** next to the game's own Game/Options menus, so every
-  new feature is one click away in the 1995 style, with native dialogs. An
-  ImGui overlay (F1) is the alternative for the graphics sliders; decide
-  once the presenter exists.
+- **The "Recomp" menu** (in: controller items, edit/reload `hover.ini`)
+  grows a submenu per feature below. An ImGui overlay (F1) is the
+  alternative for the graphics sliders; decide once the presenter exists.
 
 ## 1. Graphics
 
@@ -54,13 +53,11 @@ Where the ideas come from: gunman's D3D11 presenter, SimCity 2000's frontend
 
 ## 2. Input
 
-- **Xbox controllers (XInput)**: folded into the `GetAsyncKeyState` shim that
-  scripted keys already use. Stick/d-pad to the four steering keys, triggers
-  to throttle/reverse, buttons to the jump/wall/cloak keys the game reads
-  (its key table is at `0x004606EC`..`0x00460708`, set by Keyboard Settings),
-  Start = F3 pause, Back = F2 new game.
-- **Pad settings dialog**: remap each action, stick deadzone, trigger
-  threshold, invert, which pad is player 1. Saved in `[pad]`.
+- **Xbox controllers (XInput)**: in ([docs/controller.md](docs/controller.md)).
+  Next: try it with a real pad at the console (none reaches an RDP session).
+- **Pad settings dialog**: the Recomp menu has deadzone and slot presets;
+  a real dialog for remapping each action by pressing the button, trigger
+  threshold and invert. The ini already holds all of it.
 - **Rumble** on hits and pickups: key off the sounds the game already plays
   (`HIT_WALL`, `HIT_ROBT`, `OBT_*` through `sndPlaySoundA`/the mixer).
 - **Analogue steering**: the game only knows keys held or not. Pulse-width
@@ -116,32 +113,67 @@ So a playable level is **`.MAZ` + a 32-bit seed**.
 
 ## 5. Multiplayer
 
-The original is one human against robots. Everything here is research
-first, in this order, because each step needs the one before.
+The goal: **up to 16 players** in one arena, several on each PC (split
+screen, one pad each) and the rest over the internet, **joining and leaving
+while the game runs**. Worlds scale up for it, and a map may be empty at
+times: robots fill the empty seats, and a player who joins takes one over.
+
+The original is one human against robots, so each step needs the one before:
 
 1. **Determinism audit.** Pin the seed, record inputs, replay, compare frame
    hashes. Find every clock read (`GetTickCount`, `timeGetTime`, the 50 ms
    timer) and every other source of non-determinism.
 2. **Find the craft model.** The player's craft and the robots' crafts are
    probably one struct with a controller (human keys / robot AI following
-   `BEACON`s). Locate it, and the AI's steering entry point.
-3. **A second human craft**: replace one robot's AI steering with a second
-   input source (pad 2). Both teams get humans; the game already has two
-   teams and a flag per team.
-4. **Split screen (2 and 4 players)**: the renderer draws one camera. Either
-   run it once per viewport per frame (camera swap, render into separate
-   DIBs, composite), or run N synchronized processes, one per viewport,
-   composited by the presenter. The first is better if the renderer's state
-   is re-entrant enough.
-5. **Internet play**: lockstep on inputs over UDP (8 bytes a player a
-   tick), a relay or direct connection with a join code, and rollback
-   (GGPO-style) later if latency needs it. Determinism (1) is the
-   prerequisite, and save-state snapshots of guest memory make rollback
-   possible.
-6. **Ghost races**: the cheap multiplayer. Record a run (seed + inputs),
-   play it back as a translucent ghost craft. Needs 1 and 2 only.
+   `BEACON`s). Locate it, its array, and the AI's steering entry point.
+   The level table already varies robot counts per level, so the count is
+   data, not code.
+3. **Humans in robot seats**: replace a robot's AI steering with an input
+   source (pad 2, or a network peer). With seats as the unit, drop-in is
+   "a human takes over a robot" and drop-out is "the robot takes it back".
+4. **More seats**: raise the craft count past what the levels ship (16),
+   with the spawn points a bigger map provides (section 4's generator makes
+   those maps: more `HUMAN_nn`/`ROBOT_nn` and flag points).
+5. **Teams**: the game has two (red/blue flags). 16 players as 8 v 8, or
+   free-for-all variants if the flag logic allows it.
+6. **Split screen on one PC (2 to 4 views)**: the renderer draws one camera.
+   Run it once per view per frame (camera swap, render into separate DIBs,
+   composite in the presenter), or run one synchronized process per view.
+   The first is better if the renderer's state is re-entrant enough.
+7. **Internet play**: an authoritative host (the PC that created the game)
+   runs the simulation, and clients send inputs and receive state. With
+   drop-in/out and 16 players that fits better than pure lockstep, which
+   stalls everyone on the slowest peer. UDP, a join code through a small
+   relay, client-side prediction for the local crafts. Snapshots of the
+   craft and flag state are the unit, and are also what a joining player
+   receives.
+8. **Ghost races**: the cheap multiplayer on the way. Record a run (seed +
+   inputs), play it back as a translucent craft. Needs 1 and 2 only.
 
-## 6. Everything else
+## 6. Mods
+
+- **A mod folder**: `mods\<name>\` holding any of `MAZES\`, `SOUNDS\`,
+  textures, level-table overrides and a `mod.ini`, layered over the game's
+  own files by the host's file shims (`CreateFileA`, `mmioOpenA`,
+  `OpenFile`). Nothing in `game\hover` is ever changed. A Recomp > Mods menu
+  to switch, and `--mod NAME`.
+- **Doom maps as Hover! mazes** (`tools/wad2hover.py`): a good fit, because
+  both are 2D line maps. Doom's linedefs become `CMerlinStatic` walls, sector
+  floor and ceiling heights become wall heights, `THINGS` give player and
+  item points (`HUMAN_nn`, `POD_RANDOM_nn`, flags), and the textures are
+  palette-quantized into a `.TEX`. The converter reads a WAD the user
+  supplies (the shareware `DOOM1.WAD` works); nothing from Doom is ever in
+  the repo, and the converted mod stays in the user's `mods\`. Heretic,
+  Hexen and Freedoom WADs use the same format; Freedoom is free content, so
+  a converted Freedoom mod could even ship in releases.
+- **Quake / Half-Life maps** as a stretch: `.map` brush files flatten to
+  line maps too (hlmapgen writes them), so the generator can target both.
+- **Texture and sound packs** (see sections 1 and 3) are mods like any other.
+- **Community content**: archive.org has only the game itself
+  (`microsoft_hover`, the Windows 95 folder). No fan levels or editors
+  turned up, so the level tools here are the first.
+
+## 7. Everything else
 
 - **Save states** (F5/F9): snapshot the guest's memory (image, heap,
   stacks) and registers. Hard with live Windows handles (DIBs, timers),
@@ -153,7 +185,6 @@ first, in this order, because each step needs the one before.
 - **Cheats menu**: all powerups, invincibility, robot speed (addresses from
   the craft struct work in section 5).
 - **Discord-free "now playing" overlay**: level, seed, time, flags.
-- **Mod/texture/music packs** in `mods\`, loaded in order.
 - **Linux / Steam Deck** under Wine or Proton: the host is plain Win32 and
   should work; test it.
 
