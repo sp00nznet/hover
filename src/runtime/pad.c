@@ -74,6 +74,7 @@ static int   g_enabled = 1, g_slot, g_deadzone = 30, g_trigger = 20;  /* slot 0 
 static HWND  g_wnd;
 static volatile LONG g_held[256];       /* keys the pad holds, by VK */
 static volatile int  g_connected = -1;  /* XInput user index in use, -1 = none */
+static int   g_first_only;               /* several players: controller 1 only (mp.c) */
 static DWORD (WINAPI *p_get)(DWORD, XINPUT_STATE*);
 
 /* ------------------------------------------------------------ settings */
@@ -179,7 +180,8 @@ static DWORD WINAPI poll_thread(LPVOID unused) {
         XINPUT_STATE st;
         int user = -1;
         if (g_enabled && p_get) {
-            for (int u = g_slot ? g_slot - 1 : 0; u < (g_slot ? g_slot : 4); u++)
+            int slot = g_first_only ? 1 : g_slot;
+            for (int u = slot ? slot - 1 : 0; u < (slot ? slot : 4); u++)
                 if (p_get(u, &st) == ERROR_SUCCESS) { user = u; break; }
         }
         if (user != logged) {
@@ -235,6 +237,19 @@ int pad_selftest(void) {
 }
 
 int pad_held(int vk) { return g_held[vk & 0xFF] > 0; }
+
+/* Multiplayer (mp.c): controller `user` (0-3) as it is now, for a seat that
+ * is driven directly rather than through the game's keys. */
+int pad_read(int user, XINPUT_GAMEPAD* out) {
+    XINPUT_STATE st;
+    if (!p_get || !g_enabled || p_get((DWORD)user, &st) != ERROR_SUCCESS) return 0;
+    *out = st.Gamepad;
+    return 1;
+}
+
+/* With several players, controller 1 is player 1's alone, whatever
+ * `controller` says: controllers 2-4 belong to the other seats. */
+void pad_first_only(int on) { g_first_only = on; }
 
 static int g_started;
 

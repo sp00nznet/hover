@@ -25,6 +25,7 @@
 #include "pad.h"
 #include "present.h"
 #include "levels.h"
+#include "mp.h"
 
 extern const uint32_t hover_entry_va;     /* recomp_dispatch.c */
 
@@ -138,6 +139,7 @@ static void recomp_menu(HWND frame) {
     HMENU bar = GetMenu(frame), m = CreatePopupMenu();
     if (!bar) return;
     levels_menu(m);
+    mp_menu(m);
     present_menu(m);
     pad_menu(m);
     AppendMenuA(m, MF_SEPARATOR, 0, NULL);
@@ -149,7 +151,7 @@ static void recomp_menu(HWND frame) {
 }
 
 static int recomp_command(UINT id) {
-    if (levels_command(id) || present_command(id) || pad_command(id)) return 1;
+    if (levels_command(id) || mp_command(id) || present_command(id) || pad_command(id)) return 1;
     if (id == ID_EDIT_INI) ShellExecuteA(NULL, "open", g_ini, NULL, NULL, SW_SHOWNORMAL);
     else if (id == ID_RELOAD_INI) { levels_load(); present_load(); pad_reload(); }
     else return 0;
@@ -158,6 +160,7 @@ static int recomp_command(UINT id) {
 
 static void recomp_update_menu(HMENU popup) {
     levels_update_menu(popup);
+    mp_update_menu(popup);
     present_update_menu(popup);
     pad_update_menu(popup);
     EnableMenuItem(popup, ID_EDIT_INI, MF_BYCOMMAND | MF_ENABLED);
@@ -341,6 +344,12 @@ static DWORD WINAPI key_thread(LPVOID p) {
  * the hovercraft from keys typed into another program). */
 static int real_keys(void) { return !g_headless && (!g_present || present_focused()); }
 
+/* A key as the game would see it (scripted, pad, or real): mp.c's seats. */
+static int key_down(int vk) {
+    vk &= 0xFF;
+    return g_held[vk] || pad_held(vk) || (real_keys() && (GetAsyncKeyState(vk) & 0x8000));
+}
+
 static void shim_GetAsyncKeyState(void) {
     int vk = ARG(0) & 0xFF;
     SHORT s = g_held[vk] || pad_held(vk) ? (SHORT)0x8001 : real_keys() ? GetAsyncKeyState(vk) : 0;
@@ -410,18 +419,37 @@ static void finish(void) {
     }
 }
 
+/* With several players (mp.c) the shadow is a grid of cells, one per
+ * player, each the size of the game's client area; each render pass's blits
+ * go to its cell. The grid is rebuilt when the player count changes (not
+ * while --record runs: the video's size is fixed when it starts). */
+static int g_cw, g_ch, g_cols = 1, g_rows = 1;
+static long g_shadow_layout = -1;
+static HBITMAP g_shadow_bm;
+
 static int shadow_ready(void) {
-    if (g_shadow_dc) return 1;
+    if (g_shadow_dc && (g_shadow_layout == mp_layout() || g_ffmpeg)) return 1;
     RECT rc;
     if (!g_main || !GetClientRect(g_main, &rc) || rc.right < 16 || rc.bottom < 16) return 0;
-    g_sw = rc.right & ~1;                /* even: yuv420p */
-    g_sh = rc.bottom & ~1;
+    int first = !g_shadow_dc;
+    mp_grid(&g_cols, &g_rows);
+    g_shadow_layout = mp_layout();
+    g_cw = rc.right & ~1;                /* even: yuv420p */
+    g_ch = rc.bottom & ~1;
+    present_lock();
+    if (g_shadow_dc) { DeleteDC(g_shadow_dc); DeleteObject(g_shadow_bm); }
+    g_sw = g_cw * g_cols;
+    g_sh = g_ch * g_rows;
     BITMAPINFO bi = { { sizeof(BITMAPINFOHEADER), g_sw, -g_sh, 1, 32, BI_RGB } };
-    HBITMAP bm = CreateDIBSection(NULL, &bi, DIB_RGB_COLORS, (void**)&g_shadow, NULL, 0);
+    g_shadow_bm = CreateDIBSection(NULL, &bi, DIB_RGB_COLORS, (void**)&g_shadow, NULL, 0);
     g_shadow_dc = CreateCompatibleDC(NULL);
-    SelectObject(g_shadow_dc, bm);
+    SelectObject(g_shadow_dc, g_shadow_bm);
     present_source(g_shadow, g_sw, g_sh);
-    fprintf(stderr, "[capture] window client %ldx%ld\n", rc.right, rc.bottom);
+    present_unlock();
+    if (g_diff_shot) { free(g_diff_shot); g_diff_shot = NULL; }
+    fprintf(stderr, "[capture] window client %ldx%ld, %dx%d view%s\n", rc.right, rc.bottom, g_cols, g_rows,
+            g_cols * g_rows > 1 ? "s" : "");
+    if (!first) return 1;
     if (g_record) {
         char cmd[MAX_PATH + 256];
         _snprintf(cmd, sizeof cmd - 1,
@@ -478,12 +506,22 @@ static void mirror(HDC dst, int x, int y, int w, int h, HDC src, int sx, int sy,
     if (!wnd || !(wnd == g_main || IsChild(g_main, wnd)) || !shadow_ready()) return;
     POINT p = { x, y };
     MapWindowPoints(wnd, g_main, &p, 1);
+    /* A render pass's blits go to its player's cell; anything else (the
+     * dashboard's background, painted in WM_PAINT) to every cell. */
+    int pass = mp_in_views(), v = pass ? mp_view() : 0, last = pass ? v : g_cols * g_rows - 1;
     present_lock();
-    if (sw < 0) BitBlt(g_shadow_dc, p.x, p.y, w, h, src, sx, sy, rop);
-    else StretchBlt(g_shadow_dc, p.x, p.y, w, h, src, sx, sy, sw, sh, rop);
+    for (; v <= last && v < g_cols * g_rows; v++) {
+        int ox = (v % g_cols) * g_cw, oy = (v / g_cols) * g_ch;
+        HRGN cell = CreateRectRgn(ox, oy, ox + g_cw, oy + g_ch);
+        SelectClipRgn(g_shadow_dc, cell);    /* a blit never spills into another player's cell */
+        if (sw < 0) BitBlt(g_shadow_dc, p.x + ox, p.y + oy, w, h, src, sx, sy, rop);
+        else StretchBlt(g_shadow_dc, p.x + ox, p.y + oy, w, h, src, sx, sy, sw, sh, rop);
+        DeleteObject(cell);
+    }
+    SelectClipRgn(g_shadow_dc, NULL);
     GdiFlush();
     present_unlock();
-    if (w >= 256 && h >= 128) view_presented();
+    if (w >= 256 && h >= 128 && (!pass || mp_view() == 0)) view_presented();   /* frames are player 1's */
     record_tick();
 }
 
@@ -542,7 +580,9 @@ static native32_shim_t g_headless_shims[] = {
 
 /* ------------------------------------------------------------ reports */
 
-recomp_func_t recomp_lookup_manual(uint32_t va) { (void)va; return NULL; }
+/* Host replacements for lifted functions reached by indirect calls: the
+ * multiplayer seats take over CRobotPlayer::Think (mp.c). */
+recomp_func_t recomp_lookup_manual(uint32_t va) { return mp_lookup(va); }
 
 /* Added after native32's own handler, so callbacks are resolved first and
  * only real faults get here. */
@@ -612,7 +652,7 @@ static DWORD WINAPI watchdog(LPVOID unused) {
 
 int main(int argc, char** argv) {
     const char* game = "game\\hover";
-    int run = 0, pad_test = 0, levels_test = 0, classic = 0, seed_pinned = 0;
+    int run = 0, pad_test = 0, levels_test = 0, classic = 0, seed_pinned = 0, players = 0;
     uint32_t seed = 0;
     for (int i = 1; i < argc; i++) {
         int n = recomp_trace_arg(argc, argv, i);
@@ -622,6 +662,7 @@ int main(int argc, char** argv) {
         else if (!strcmp(argv[i], "--pad-selftest")) pad_test = 1;
         else if (!strcmp(argv[i], "--levels-selftest")) levels_test = 1;
         else if (!strcmp(argv[i], "--classic")) classic = 1;
+        else if (!strcmp(argv[i], "--players") && i + 1 < argc) players = atoi(argv[++i]);
         else if (!strcmp(argv[i], "--seed") && i + 1 < argc) { seed = strtoul(argv[++i], NULL, 10); seed_pinned = 1; }
         else if (!strcmp(argv[i], "--key") && i + 1 < argc) {
             if (!parse_key(argv[++i])) { fprintf(stderr, "bad --key %s\n", argv[i]); return 1; }
@@ -652,8 +693,8 @@ int main(int argc, char** argv) {
         else if (!strcmp(argv[i], "--callbacks")) native32_trace_callbacks = 1;
         else {
             printf("usage: hover [--run] [--headless] [--record out.mp4] [--frames N] [--diff A,B]\n"
-                   "             [--key NAME@MS[+HOLD]] [--seed N] [--classic] [--game game\\hover]\n"
-                   "             [--watchdog S] [--native-trace] [--callbacks]\n");
+                   "             [--key NAME@MS[+HOLD]] [--seed N] [--players N] [--classic]\n"
+                   "             [--game game\\hover] [--watchdog S] [--native-trace] [--callbacks]\n");
             recomp_trace_help();
             return argv[i][1] == 'h' || argv[i][2] == 'h' ? 0 : 1;
         }
@@ -663,6 +704,7 @@ int main(int argc, char** argv) {
     GetModuleFileNameA(NULL, g_ini, MAX_PATH);
     strcpy(strrchr(g_ini, '\\') + 1, "hover.ini");
     levels_init(g_ini, seed, seed_pinned);
+    mp_init(g_ini, players, key_down);
     g_present = !g_headless && !classic && run && present_wanted(g_ini);
     g_hidden = g_headless || g_present;
     GetFullPathNameA(game, MAX_PATH - 1, g_game, NULL);
@@ -692,6 +734,7 @@ int main(int argc, char** argv) {
     if (!span) { fprintf(stderr, "cannot map %s at 0x%08X\n", g_guest_exe, HOVER_BASE); return 1; }
     printf("  mapped HOVER.EXE: 0x%08X-0x%08X\n", HOVER_BASE, HOVER_BASE + span);
     if (native32_bind(HOVER_BASE, shims, nshims) != 0) return 1;
+    mp_apply_table();                    /* the seats' robots, in the mapped level table */
 
     if (pad_test) return pad_selftest();
     if (levels_test) return levels_selftest();

@@ -10,6 +10,14 @@ versions follow [SemVer](https://semver.org/).
   the startup check is answered; rendering is unchanged.
 
 ### Added
+- Split screen for 2 to 4 players: players 2-4 drive robots of their own
+  (one extra flag-runner per player in every level) with controllers 2-4,
+  each with their own view. The frame draw runs once per player with the
+  camera redirected (lift-time patches in `run_lift.py`), each pass into
+  its cell of the capture buffer. Recomp > Multiplayer, `--players N`
+  ([docs/multiplayer.md](docs/multiplayer.md)).
+- `run_lift.py` source patches: hooks the host needs inside lifted
+  functions, applied to every copy of the instruction and checked.
 - The presenter: the game in a resizable window of the host's own on
   Direct3D 11 (WARP, then GDI, as fallbacks), with sharp/smooth/nearest/
   integer scaling, borderless fullscreen (F11, Alt+Enter), CRT (scanlines,

@@ -262,8 +262,14 @@ static void draw(void) {
     EnterCriticalSection(&g_lock);
     w = g_sw;
     h = g_sh;
+    static int copy_w, copy_h;
     if (g_src && w > 0) {
-        if (!g_copy) g_copy = (uint32_t*)malloc((size_t)w * h * 4);
+        if (!g_copy || w != copy_w || h != copy_h) {   /* the grid changes with the player count */
+            free(g_copy);
+            g_copy = (uint32_t*)malloc((size_t)w * h * 4);
+            copy_w = w;
+            copy_h = h;
+        }
         memcpy(g_copy, g_src, (size_t)w * h * 4);
     }
     LeaveCriticalSection(&g_lock);
@@ -327,6 +333,7 @@ static void draw(void) {
 /* ------------------------------------------------------------ window */
 
 #define WM_PRESENT_TITLE (WM_APP + 1)
+#define WM_PRESENT_REFIT (WM_APP + 2)
 
 static void set_fullscreen(int on) {
     if (on == g_full) return;
@@ -353,8 +360,19 @@ static void set_fullscreen(int on) {
 
 /* Window size for the frame at `scale` times, with this window's chrome. */
 static void size_to(int scale) {
-    RECT r = { 0, 0, (g_sw > 0 ? g_sw : 516) * scale, (g_sh > 0 ? g_sh : 388) * scale };
-    if (g_full) set_fullscreen(0);
+    int w = g_sw > 0 ? g_sw : 516, h = g_sh > 0 ? g_sh : 388;
+    MONITORINFO mi = { sizeof mi };
+    /* A split screen is two to four times the picture: step the scale down
+     * until the window fits the monitor's work area. */
+    double k = scale;
+    if (GetMonitorInfoA(MonitorFromWindow(g_wnd, MONITOR_DEFAULTTONEAREST), &mi)) {
+        double fw = (mi.rcWork.right - mi.rcWork.left) * 0.95 / w, fh = (mi.rcWork.bottom - mi.rcWork.top) * 0.90 / h;
+        if (k > fw) k = fw;              /* sharp-bilinear takes a fractional scale well */
+        if (k > fh) k = fh;
+        if (k < 1) k = 1;
+    }
+    RECT r = { 0, 0, (int)(w * k), (int)(h * k) };
+    if (g_full) return;
     AdjustWindowRectEx(&r, GetWindowLongA(g_wnd, GWL_STYLE), GetMenu(g_wnd) != NULL, 0);
     SetWindowPos(g_wnd, NULL, 0, 0, r.right - r.left, r.bottom - r.top, SWP_NOMOVE | SWP_NOZORDER);
 }
@@ -415,6 +433,9 @@ static LRESULT CALLBACK proc(HWND h, UINT m, WPARAM w, LPARAM l) {
     case WM_PRESENT_TITLE:
         SetWindowTextA(h, g_title);
         return 0;
+    case WM_PRESENT_REFIT:           /* the picture changed size: the player count did */
+        size_to(g_scale);
+        return 0;
     }
     return DefWindowProcA(h, m, w, l);
 }
@@ -463,9 +484,11 @@ int present_running(void) { return g_ready != NULL; }
 int present_focused(void) { return g_wnd && GetForegroundWindow() == g_wnd; }
 
 void present_source(const uint32_t* bgra, int w, int h) {
+    int changed = w != g_sw || h != g_sh;
     g_src = bgra;
     g_sw = w;
     g_sh = h;
+    if (changed && g_wnd) PostMessageA(g_wnd, WM_PRESENT_REFIT, 0, 0);
 }
 
 void present_lock(void) { if (g_ready) EnterCriticalSection(&g_lock); }
@@ -537,7 +560,7 @@ int present_command(UINT id) {
     else if (id >= ID_DITHER && id < ID_DITHER + D_COUNT) put("dither", k_dithers[id - ID_DITHER]);
     else if (id >= ID_SCALE + 1 && id <= ID_SCALE + 4) {
         put_int("scale", (int)(id - ID_SCALE));
-        if (g_wnd) size_to((int)(id - ID_SCALE));
+        if (g_wnd) { set_fullscreen(0); size_to((int)(id - ID_SCALE)); }
     }
     else if (id == ID_CRT) put_int("crt", !g_crt);
     else if (id == ID_CURVE) put_int("curvature", !g_curve);

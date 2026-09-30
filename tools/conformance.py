@@ -49,7 +49,12 @@ MILESTONES = [
     ('level 1 on the pinned seed', r'\[level\] level 1, seed 12345 \(pinned\)'),
     ('share codes self-test', r'\[level\] selftest OK'),
     ('Recomp menu on the frame', r'\[menu\] Recomp menu added'),
+    ('split screen: 2 players, 150 frames', r'\[split\] .*2x1 views.*\[capture\] 150 frames: stopping'),
 ]
+
+# Split screen: player 2 in a robot seat, driven by I/J/K/L, its own view.
+SPLIT = ['--players', '2', '--frames', '150', '--seed', '12345', '--key', 'F2@2000',
+         '--key', 'UP@7000+5000', '--key', 'I@7000+5000']
 
 # Milliseconds from entry: F2 once the menu is up, then UP held long enough
 # that frames 150-210 are driving (level 1 loads in about 5 s), with a turn.
@@ -69,6 +74,9 @@ def boot(seconds):
         out = out if isinstance(out, str) else out.decode(errors='replace')
     # The controller mapping has no controller to test against, so the host
     # tests it on synthetic pad states (pad.c, pad_selftest).
+    t = subprocess.run([HOST, '--headless', '--run', '--watchdog', '90'] + SPLIT, cwd=ROOT,
+                       capture_output=True, text=True, errors='replace', timeout=150)
+    out += '\n[split] ' + (t.stdout + t.stderr).replace('\n', ' ') + '\n'
     for test in ('--pad-selftest', '--levels-selftest'):
         t = subprocess.run([HOST, test], cwd=ROOT, capture_output=True, text=True,
                            errors='replace', timeout=60)

@@ -107,40 +107,24 @@ So a playable level is **`.MAZ` + a 32-bit seed**.
 
 The goal: **up to 16 players** in one arena, several on each PC (split
 screen, one pad each) and the rest over the internet, **joining and leaving
-while the game runs**. Worlds scale up for it, and a map may be empty at
-times: robots fill the empty seats, and a player who joins takes one over.
+while the game runs**. The research is done ([docs/multiplayer.md](docs/multiplayer.md)):
+crafts are dynamic lists, a robot can be driven by a player, the renderer
+can draw any craft's view, and the simulation is deterministic per tick.
 
-The original is one human against robots, so each step needs the one before:
-
-1. **Determinism audit.** Pin the seed, record inputs, replay, compare frame
-   hashes. Find every clock read (`GetTickCount`, `timeGetTime`, the 50 ms
-   timer) and every other source of non-determinism.
-2. **Find the craft model.** The player's craft and the robots' crafts are
-   probably one struct with a controller (human keys / robot AI following
-   `BEACON`s). Locate it, its array, and the AI's steering entry point.
-   The level table already varies robot counts per level, so the count is
-   data, not code.
-3. **Humans in robot seats**: replace a robot's AI steering with an input
-   source (pad 2, or a network peer). With seats as the unit, drop-in is
-   "a human takes over a robot" and drop-out is "the robot takes it back".
-4. **More seats**: raise the craft count past what the levels ship (16),
-   with the spawn points a bigger map provides (section 4's generator makes
-   those maps: more `HUMAN_nn`/`ROBOT_nn` and flag points).
-5. **Teams**: the game has two (red/blue flags). 16 players as 8 v 8, or
-   free-for-all variants if the flag logic allows it.
-6. **Split screen on one PC (2 to 4 views)**: the renderer draws one camera.
-   Run it once per view per frame (camera swap, render into separate DIBs,
-   composite in the presenter), or run one synchronized process per view.
-   The first is better if the renderer's state is re-entrant enough.
-7. **Internet play**: an authoritative host (the PC that created the game)
-   runs the simulation, and clients send inputs and receive state. With
-   drop-in/out and 16 players that fits better than pure lockstep, which
-   stalls everyone on the slowest peer. UDP, a join code through a small
-   relay, client-side prediction for the local crafts. Snapshots of the
-   craft and flag state are the unit, and are also what a joining player
-   receives.
-8. **Ghost races**: the cheap multiplayer on the way. Record a run (seed +
-   inputs), play it back as a translucent craft. Needs 1 and 2 only.
+1. **Split screen, 2-4 players**: in. Next for it: a HUD per player (radar,
+   flags, score and powerups read the one human and the one view), powerups
+   for players in robot seats (the pickup check, 0x40CB40, and Use), a
+   sprite for the human craft so the others can see player 1, and sounds
+   for every local player.
+2. **Online, lockstep**: gate the 50 ms tick on everyone's inputs, feed every
+   seat from the tick's input record, UDP with redundancy, a desync hash.
+   Direct IP first (LAN, Tailscale), a small relay with join codes after.
+3. **Teams and modes**: players on both teams (the flag rule goes by class,
+   0x414470: make it go by seat), co-op against the robots, free-for-all.
+4. **16 players, drop-in/out**: a seat nobody holds is a robot again; a
+   joiner catches up by replaying the session's inputs, or a snapshot.
+   Bigger generated maps (section 4) for the start spots 16 crafts need.
+5. **Ghost races**: record a run (seed + inputs), replay it as another craft.
 
 ## 6. Mods
 
