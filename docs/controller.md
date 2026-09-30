@@ -84,12 +84,12 @@ DPAD_RIGHT`, and `LSTICK_*` / `RSTICK_*` with `UP DOWN LEFT RIGHT`. Several
 per action, comma-separated. An unknown name is reported on stderr and
 ignored.
 
-## The Recomp menu
+## Recomp > Controller
 
-The frame's menu bar gains **Recomp**: the controller's status, *Use Xbox
-controller*, *Stick deadzone* (15/30/45%), *Which controller* (any, 1-4),
-*Edit settings (hover.ini)...* and *Reload settings*. Changes are written to
-`hover.ini` at once.
+The menu bar gains **Recomp**, and its **Controller** submenu has the
+controller's status, *Use Xbox controller*, *Stick deadzone* (15/30/45%) and
+*Which controller* (any, 1-4). Changes are written to `hover.ini` at once;
+*Recomp > Edit settings (hover.ini)...* and *Reload settings* cover the rest.
 
 MFC greys every menu item it has no command handler for when a popup opens,
 and drops `WM_COMMAND`s it does not know. The host's subclass of the frame

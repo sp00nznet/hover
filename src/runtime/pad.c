@@ -1,6 +1,6 @@
 /*
- * Xbox controller (XInput) support and the in-game "Recomp" menu that sets
- * it up. docs/controller.md has the design; the short version:
+ * Xbox controller (XInput) support and its Recomp > Controller submenu.
+ * docs/controller.md has the design; the short version:
  *
  * Hover! reads its steering by polling GetAsyncKeyState for the keys in its
  * own key table (set by Options > Player Controls > Set Keys), and its menu
@@ -19,7 +19,6 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <xinput.h>
-#include <shellapi.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -254,15 +253,13 @@ void pad_start(const char* ini, HWND wnd) {
 
 /* ------------------------------------------------------------ menu */
 
-enum { ID_STATUS = 0x6F00, ID_ENABLE, ID_OPEN_INI, ID_RELOAD,
+enum { ID_STATUS = 0x6F00, ID_ENABLE,
        ID_DZ = 0x6F10,      /* + 0..2 */
        ID_SLOT = 0x6F20 };  /* + 0..4 */
 static const int g_dz_presets[] = {15, 30, 45};
 static HMENU g_menu;
 
-void pad_add_menu(HWND frame) {
-    HMENU bar = GetMenu(frame);
-    if (!bar || g_menu) return;
+void pad_menu(HMENU recomp) {
     HMENU dz = CreatePopupMenu(), slot = CreatePopupMenu();
     AppendMenuA(dz, MF_STRING, ID_DZ + 0, "&Small (15%)");
     AppendMenuA(dz, MF_STRING, ID_DZ + 1, "&Medium (30%)");
@@ -278,12 +275,7 @@ void pad_add_menu(HWND frame) {
     AppendMenuA(g_menu, MF_STRING, ID_ENABLE, "&Use Xbox controller");
     AppendMenuA(g_menu, MF_POPUP, (UINT_PTR)dz, "Stick &deadzone");
     AppendMenuA(g_menu, MF_POPUP, (UINT_PTR)slot, "&Which controller");
-    AppendMenuA(g_menu, MF_SEPARATOR, 0, NULL);
-    AppendMenuA(g_menu, MF_STRING, ID_OPEN_INI, "&Edit settings (hover.ini)...");
-    AppendMenuA(g_menu, MF_STRING, ID_RELOAD, "&Reload settings");
-    AppendMenuA(bar, MF_POPUP, (UINT_PTR)g_menu, "&Recomp");
-    DrawMenuBar(frame);
-    fputs("[menu] Recomp menu added\n", stderr);
+    AppendMenuA(recomp, MF_POPUP, (UINT_PTR)g_menu, "&Controller");
 }
 
 /* MFC greys every item it has no handler for when a popup opens, so the
@@ -295,8 +287,8 @@ void pad_update_menu(HMENU popup) {
     else _snprintf(t, sizeof t, !g_started ? "Controller: off (headless run)"
                                 : p_get ? "Controller: none connected" : "Controller: no XInput");
     ModifyMenuA(g_menu, ID_STATUS, MF_BYCOMMAND | MF_STRING | MF_GRAYED, ID_STATUS, t);
-    for (UINT id = ID_ENABLE; id <= ID_RELOAD; id++) EnableMenuItem(popup, id, MF_BYCOMMAND | MF_ENABLED);
-    CheckMenuItem(g_menu, ID_ENABLE, MF_BYCOMMAND | (g_enabled ? MF_CHECKED : MF_UNCHECKED));
+    EnableMenuItem(popup, ID_ENABLE, MF_BYCOMMAND | MF_ENABLED);
+    CheckMenuItem(popup, ID_ENABLE, MF_BYCOMMAND | (g_enabled ? MF_CHECKED : MF_UNCHECKED));
     for (int i = 0; i < 3; i++) {
         EnableMenuItem(popup, ID_DZ + i, MF_BYCOMMAND | MF_ENABLED);
         CheckMenuItem(popup, ID_DZ + i, MF_BYCOMMAND | (g_deadzone == g_dz_presets[i] ? MF_CHECKED : MF_UNCHECKED));
@@ -311,8 +303,9 @@ int pad_command(UINT id) {
     if (id == ID_ENABLE) put_int("enabled", !g_enabled);
     else if (id >= ID_DZ && id < ID_DZ + 3) put_int("deadzone", g_dz_presets[id - ID_DZ]);
     else if (id >= ID_SLOT && id <= ID_SLOT + 4) put_int("controller", (int)(id - ID_SLOT));
-    else if (id == ID_OPEN_INI) { ShellExecuteA(NULL, "open", g_ini, NULL, NULL, SW_SHOWNORMAL); return 1; }
-    else if (id != ID_RELOAD) return 0;
+    else return 0;
     load();
     return 1;
 }
+
+void pad_reload(void) { load(); }

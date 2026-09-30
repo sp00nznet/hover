@@ -14,6 +14,7 @@
 #include <windows.h>
 #include <dwmapi.h>
 #include <tlhelp32.h>
+#include <shellapi.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -22,6 +23,8 @@
 #include "native32.h"
 #include "recomp_trace.h"
 #include "pad.h"
+#include "present.h"
+#include "levels.h"
 
 extern const uint32_t hover_entry_va;     /* recomp_dispatch.c */
 
@@ -117,27 +120,72 @@ static void shim_MessageBoxA(void) {
 
 static HWND g_main;                      /* the "Hover!" frame window */
 static char g_ini[MAX_PATH];             /* hover.ini, beside the exe */
+static int  g_present;                   /* the presenter shows the game (present.c) */
+static int  g_hidden;                    /* the frame is cloaked: headless, or the presenter */
+
+/* ------------------------------------------------------------ Recomp menu */
+
+/* The port's own menu, next to the game's Game/Options/Help. Each module
+ * adds its submenu (levels.c, present.c, pad.c) and handles its commands. */
+enum { ID_EDIT_INI = 0x6C00, ID_RELOAD_INI };
+
+static void set_title(const char* t) {
+    if (g_present) present_set_title(t);
+    else if (g_main) SetWindowTextA(g_main, t);
+}
+
+static void recomp_menu(HWND frame) {
+    HMENU bar = GetMenu(frame), m = CreatePopupMenu();
+    if (!bar) return;
+    levels_menu(m);
+    present_menu(m);
+    pad_menu(m);
+    AppendMenuA(m, MF_SEPARATOR, 0, NULL);
+    AppendMenuA(m, MF_STRING, ID_EDIT_INI, "&Edit settings (hover.ini)...");
+    AppendMenuA(m, MF_STRING, ID_RELOAD_INI, "&Reload settings");
+    AppendMenuA(bar, MF_POPUP, (UINT_PTR)m, "&Recomp");
+    DrawMenuBar(frame);
+    fputs("[menu] Recomp menu added\n", stderr);
+}
+
+static int recomp_command(UINT id) {
+    if (levels_command(id) || present_command(id) || pad_command(id)) return 1;
+    if (id == ID_EDIT_INI) ShellExecuteA(NULL, "open", g_ini, NULL, NULL, SW_SHOWNORMAL);
+    else if (id == ID_RELOAD_INI) { levels_load(); present_load(); pad_reload(); }
+    else return 0;
+    return 1;
+}
+
+static void recomp_update_menu(HMENU popup) {
+    levels_update_menu(popup);
+    present_update_menu(popup);
+    pad_update_menu(popup);
+    EnableMenuItem(popup, ID_EDIT_INI, MF_BYCOMMAND | MF_ENABLED);
+    EnableMenuItem(popup, ID_RELOAD_INI, MF_BYCOMMAND | MF_ENABLED);
+}
 
 /* The host's subclass of the game's top-level windows. Every mode: the
- * frame's "Recomp" menu (pad.c), whose items MFC would otherwise grey out
- * and whose commands it would drop.
+ * Recomp menu, whose items MFC would otherwise grey out and whose commands
+ * it would drop.
  *
- * Headless, the game never hears that it lost activation. It pauses when it
- * does, as the original does in the background: WM_ACTIVATEAPP(FALSE) kills
- * the multimedia timer that paces its frame loop. A headless run's window is
- * never the active one, and whenever the desktop's foreground moved (a person
- * using the machine), a run parked in GetMessage. So its top-level windows
- * are subclassed here, in the host, and the deactivations stop at the host. */
+ * With the frame cloaked (headless, or the presenter showing it), the game
+ * never hears that it lost activation. It pauses when it does, as the
+ * original does in the background: WM_ACTIVATEAPP(FALSE) kills the
+ * multimedia timer that paces its frame loop. A cloaked frame is never the
+ * active window, and whenever the desktop's foreground moved (a person using
+ * the machine), a headless run parked in GetMessage. So the deactivations
+ * stop here; the presenter forwards the real ones, marked, when its own
+ * window loses the foreground. */
 static LRESULT CALLBACK host_wndproc(HWND h, UINT m, WPARAM w, LPARAM l) {
     WNDPROC prev = (WNDPROC)GetPropA(h, "hover.prev");
-    if (g_headless) {
+    if (g_hidden && l != PRESENT_REAL_ACTIVATION) {
         if ((m == WM_ACTIVATEAPP && !w) || (m == WM_ACTIVATE && LOWORD(w) == WA_INACTIVE))
             return 0;
         if (m == WM_NCACTIVATE && !w) return DefWindowProcA(h, m, w, l);
     }
-    if (m == WM_COMMAND && HIWORD(w) == 0 && pad_command(LOWORD(w))) return 0;
+    if (m == WM_COMMAND && HIWORD(w) == 0 && recomp_command(LOWORD(w))) return 0;
     LRESULT r = CallWindowProcA(prev, h, m, w, l);
-    if (m == WM_INITMENUPOPUP) pad_update_menu((HMENU)w);
+    if (m == WM_INITMENUPOPUP) recomp_update_menu((HMENU)w);
     return r;
 }
 
@@ -145,36 +193,68 @@ static void subclass(HWND h) {
     SetPropA(h, "hover.prev", (HANDLE)SetWindowLongPtrA(h, GWLP_WNDPROC, (LONG_PTR)host_wndproc));
 }
 
-/* Every mode: the host needs the game's frame window (capture, keys).
- * Headless, every top-level window is cloaked (below). */
+/* Every mode: the host needs the game's frame window (capture, keys, menu).
+ * With the frame hidden, every top-level window is cloaked (below). The
+ * machine lock is released for the whole call: the game's window procedure
+ * runs inside CreateWindowEx, and moving the menu to the presenter resizes
+ * the frame, which runs its WM_SIZE handler (see shim_ShowWindow). */
 static void shim_CreateWindowExA(void) {
     int top = !ARG(8) || !(ARG(3) & WS_CHILD);
     uint32_t a[12];
     for (int i = 0; i < 12; i++) a[i] = ARG(i);
+    int is_main = a[2] >> 16 && !strcmp(gstr(a[2]), "Hover!");
     mach_leave();
-    DWORD ex = g_headless && top ? (a[0] | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE) & ~WS_EX_APPWINDOW : a[0];
+    DWORD ex = g_hidden && top ? (a[0] | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE) & ~WS_EX_APPWINDOW : a[0];
     HWND h = CreateWindowExA(ex, (LPCSTR)(uintptr_t)a[1], (LPCSTR)(uintptr_t)a[2],
-                             g_headless && top ? a[3] & ~WS_VISIBLE : a[3], (int)a[4], (int)a[5], (int)a[6],
+                             g_hidden && top ? a[3] & ~WS_VISIBLE : a[3], (int)a[4], (int)a[5], (int)a[6],
                              (int)a[7], (HWND)(uintptr_t)a[8], (HMENU)(uintptr_t)a[9],
                              (HINSTANCE)(uintptr_t)a[10], (LPVOID)(uintptr_t)a[11]);
-    if (g_headless && top && h) {
+    if (g_hidden && top && h) {
         BOOL on = TRUE;
         DwmSetWindowAttribute(h, DWMWA_CLOAK, &on, sizeof on);
         subclass(h);
         if (a[3] & WS_VISIBLE) ShowWindow(h, SW_SHOWNOACTIVATE);
     }
+    if (is_main && h) {
+        g_main = h;
+        if (!g_hidden) subclass(h);              /* hidden did it above */
+        recomp_menu(h);
+        levels_attach(h, set_title);
+        if (!g_headless) pad_start(g_ini, h);    /* headless reads no real input */
+        if (g_present) {
+            /* The presenter's menu bar holds the frame's own popups, so the
+             * game and MFC keep their menu where it was. Taking the menu off
+             * the frame changed its client height, and the game's resize
+             * handler then rebuilt the renderer mid-load and faulted. */
+            HMENU bar = GetMenu(h), mine = CreateMenu();
+            for (int i = 0; i < GetMenuItemCount(bar); i++) {
+                char t[64];
+                GetMenuStringA(bar, i, t, sizeof t, MF_BYPOSITION);
+                AppendMenuA(mine, MF_POPUP, (UINT_PTR)GetSubMenu(bar, i), t);
+            }
+            present_start(h, mine, LoadIconA((HINSTANCE)(uintptr_t)HOVER_BASE, MAKEINTRESOURCEA(128)));
+        }
+    }
     mach_enter();
     fprintf(stderr, "[window] CreateWindowExA(\"%s\", %dx%d) -> %shwnd %p\n",
-            ARG(2) >> 16 ? gstr(ARG(2)) : "#", (int)ARG(6), (int)ARG(7),
-            g_headless && top ? "cloaked " : "", (void*)h);
-    if (ARG(2) >> 16 && !strcmp(gstr(ARG(2)), "Hover!") && h) {
-        g_main = h;
-        if (!g_headless) subclass(h);            /* headless did it above */
-        pad_add_menu(h);
-        /* Headless reads no real input: the pad stays off. */
-        if (!g_headless) pad_start(g_ini, h);
-    }
+            a[2] >> 16 ? gstr(a[2]) : "#", (int)a[6], (int)a[7], g_hidden && top ? "cloaked " : "", (void*)h);
     RET((uintptr_t)h, 12);
+}
+
+/* Level seeds (levels.c): time() reads the clock only through GetLocalTime,
+ * so the level loader's srand(time(NULL)) gets the seed levels_seed() picks.
+ * GetTimeZoneInformation says UTC, so time() returns the seed exactly. */
+static void shim_GetLocalTime(void) {
+    SYSTEMTIME* st = (SYSTEMTIME*)(uintptr_t)ARG(0);
+    ULARGE_INTEGER t;
+    t.QuadPart = ((uint64_t)levels_seed() + 11644473600ull) * 10000000ull;   /* 1601 -> 1970 */
+    FileTimeToSystemTime((FILETIME*)&t, st);
+    RET(0, 1);
+}
+
+static void shim_GetTimeZoneInformation(void) {
+    memset((void*)(uintptr_t)ARG(0), 0, sizeof(TIME_ZONE_INFORMATION));
+    RET(TIME_ZONE_ID_UNKNOWN, 1);
 }
 
 /* Headless, the frame window is cloaked: DWM composes it nowhere, so it
@@ -255,15 +335,21 @@ static DWORD WINAPI key_thread(LPVOID p) {
     return 0;
 }
 
+/* The real keyboard counts only when it is meant for the game: never
+ * headless, and with the presenter only while its window has the focus
+ * (the cloaked frame never does, and GetAsyncKeyState would otherwise steer
+ * the hovercraft from keys typed into another program). */
+static int real_keys(void) { return !g_headless && (!g_present || present_focused()); }
+
 static void shim_GetAsyncKeyState(void) {
     int vk = ARG(0) & 0xFF;
-    SHORT s = g_held[vk] || pad_held(vk) ? (SHORT)0x8001 : g_headless ? 0 : GetAsyncKeyState(vk);
+    SHORT s = g_held[vk] || pad_held(vk) ? (SHORT)0x8001 : real_keys() ? GetAsyncKeyState(vk) : 0;
     RET((uint16_t)s, 1);
 }
 
 static void shim_GetKeyState(void) {
     int vk = ARG(0) & 0xFF;
-    SHORT s = g_held[vk] || pad_held(vk) ? (SHORT)0x8000 : g_headless ? 0 : GetKeyState(vk);
+    SHORT s = g_held[vk] || pad_held(vk) ? (SHORT)0x8000 : real_keys() ? GetKeyState(vk) : 0;
     RET((uint32_t)(int32_t)s, 1);
 }
 
@@ -297,6 +383,24 @@ static long    g_frames, g_stop_after, g_written;
 static DWORD   g_rec_t0;
 static long    g_diff_a, g_diff_b;       /* --diff A,B */
 static uint32_t* g_diff_shot;
+static long    g_shot_frame;             /* --shot N:file.bmp */
+static char    g_shot_path[MAX_PATH];
+
+/* The shadow as a 32-bit BMP (top-down): a screenshot of exactly frame N. */
+static void save_bmp(const char* path) {
+    BITMAPFILEHEADER fh = { 0x4D42 };
+    BITMAPINFOHEADER ih = { sizeof ih, g_sw, -g_sh, 1, 32, BI_RGB };
+    DWORD bytes = (DWORD)g_sw * g_sh * 4;
+    fh.bfOffBits = sizeof fh + sizeof ih;
+    fh.bfSize = fh.bfOffBits + bytes;
+    FILE* f = fopen(path, "wb");
+    if (!f) { fprintf(stderr, "[capture] cannot write %s\n", path); return; }
+    fwrite(&fh, sizeof fh, 1, f);
+    fwrite(&ih, sizeof ih, 1, f);
+    fwrite(g_shadow, 1, bytes, f);
+    fclose(f);
+    fprintf(stderr, "[capture] frame %ld saved to %s\n", g_frames, path);
+}
 
 static void finish(void) {
     if (g_ffmpeg) {
@@ -316,6 +420,7 @@ static int shadow_ready(void) {
     HBITMAP bm = CreateDIBSection(NULL, &bi, DIB_RGB_COLORS, (void**)&g_shadow, NULL, 0);
     g_shadow_dc = CreateCompatibleDC(NULL);
     SelectObject(g_shadow_dc, bm);
+    present_source(g_shadow, g_sw, g_sh);
     fprintf(stderr, "[capture] window client %ldx%ld\n", rc.right, rc.bottom);
     if (g_record) {
         char cmd[MAX_PATH + 256];
@@ -357,6 +462,7 @@ static void view_presented(void) {
                     (unsigned)(changed * 100 / n), g_diff_a, g_diff_b);
         }
     }
+    if (g_shot_frame && g_frames == g_shot_frame) save_bmp(g_shot_path);
     if (g_stop_after && g_frames >= g_stop_after) {
         fprintf(stderr, "[capture] %ld frames: stopping\n", g_frames);
         finish();
@@ -372,9 +478,11 @@ static void mirror(HDC dst, int x, int y, int w, int h, HDC src, int sx, int sy,
     if (!wnd || !(wnd == g_main || IsChild(g_main, wnd)) || !shadow_ready()) return;
     POINT p = { x, y };
     MapWindowPoints(wnd, g_main, &p, 1);
+    present_lock();
     if (sw < 0) BitBlt(g_shadow_dc, p.x, p.y, w, h, src, sx, sy, rop);
     else StretchBlt(g_shadow_dc, p.x, p.y, w, h, src, sx, sy, sw, sh, rop);
     GdiFlush();
+    present_unlock();
     if (w >= 256 && h >= 128) view_presented();
     record_tick();
 }
@@ -413,16 +521,23 @@ static void shim_ExitProcess(void) {
     { "BitBlt", shim_BitBlt }, \
     { "StretchBlt", shim_StretchBlt }, \
     { "CreateWindowExA", shim_CreateWindowExA }, \
+    { "GetLocalTime", shim_GetLocalTime }, \
+    { "GetTimeZoneInformation", shim_GetTimeZoneInformation }, \
     { "ExitProcess", shim_ExitProcess }
 
+/* The frame cloaked: the presenter shows the game, or nothing does. */
+#define HIDDEN_SHIMS \
+    { "ShowWindow", shim_ShowWindow }, \
+    { "SetForegroundWindow", shim_SetForegroundWindow }, \
+    { "SetActiveWindow", shim_SetActiveWindow }
+
 static native32_shim_t g_shims[] = { GUEST_SHIMS };
+static native32_shim_t g_present_shims[] = { GUEST_SHIMS, HIDDEN_SHIMS };
 static native32_shim_t g_headless_shims[] = {
     GUEST_SHIMS,
+    HIDDEN_SHIMS,
     { "MessageBoxA", shim_MessageBoxA },
-    { "ShowWindow", shim_ShowWindow },
     { "DialogBoxParamA", shim_DialogBoxParamA },
-    { "SetForegroundWindow", shim_SetForegroundWindow },
-    { "SetActiveWindow", shim_SetActiveWindow },
 };
 
 /* ------------------------------------------------------------ reports */
@@ -497,13 +612,17 @@ static DWORD WINAPI watchdog(LPVOID unused) {
 
 int main(int argc, char** argv) {
     const char* game = "game\\hover";
-    int run = 0, pad_test = 0;
+    int run = 0, pad_test = 0, levels_test = 0, classic = 0, seed_pinned = 0;
+    uint32_t seed = 0;
     for (int i = 1; i < argc; i++) {
         int n = recomp_trace_arg(argc, argv, i);
         if (n) { i += n - 1; continue; }
         if (!strcmp(argv[i], "--run")) run = 1;
         else if (!strcmp(argv[i], "--headless")) g_headless = 1;
         else if (!strcmp(argv[i], "--pad-selftest")) pad_test = 1;
+        else if (!strcmp(argv[i], "--levels-selftest")) levels_test = 1;
+        else if (!strcmp(argv[i], "--classic")) classic = 1;
+        else if (!strcmp(argv[i], "--seed") && i + 1 < argc) { seed = strtoul(argv[++i], NULL, 10); seed_pinned = 1; }
         else if (!strcmp(argv[i], "--key") && i + 1 < argc) {
             if (!parse_key(argv[++i])) { fprintf(stderr, "bad --key %s\n", argv[i]); return 1; }
         }
@@ -514,6 +633,13 @@ int main(int argc, char** argv) {
             g_record = rec;
         }
         else if (!strcmp(argv[i], "--frames") && i + 1 < argc) g_stop_after = atol(argv[++i]);
+        else if (!strcmp(argv[i], "--shot") && i + 1 < argc) {
+            /* Absolute now: --run moves into the game folder. */
+            char* colon = strchr(argv[++i], ':');
+            g_shot_frame = atol(argv[i]);
+            if (!colon || g_shot_frame < 1) { fprintf(stderr, "bad --shot %s (want N:file.bmp)\n", argv[i]); return 1; }
+            GetFullPathNameA(colon + 1, MAX_PATH, g_shot_path, NULL);
+        }
         else if (!strcmp(argv[i], "--diff") && i + 1 < argc) {
             if (sscanf(argv[++i], "%ld,%ld", &g_diff_a, &g_diff_b) != 2 || g_diff_a < 1 || g_diff_b <= g_diff_a) {
                 fprintf(stderr, "bad --diff %s (want A,B with 0 < A < B)\n", argv[i]);
@@ -526,8 +652,8 @@ int main(int argc, char** argv) {
         else if (!strcmp(argv[i], "--callbacks")) native32_trace_callbacks = 1;
         else {
             printf("usage: hover [--run] [--headless] [--record out.mp4] [--frames N] [--diff A,B]\n"
-                   "             [--key NAME@MS[+HOLD]] [--game game\\hover] [--watchdog S]\n"
-                   "             [--native-trace] [--callbacks]\n");
+                   "             [--key NAME@MS[+HOLD]] [--seed N] [--classic] [--game game\\hover]\n"
+                   "             [--watchdog S] [--native-trace] [--callbacks]\n");
             recomp_trace_help();
             return argv[i][1] == 'h' || argv[i][2] == 'h' ? 0 : 1;
         }
@@ -536,6 +662,9 @@ int main(int argc, char** argv) {
      * host, not to the game folder (which is the user's own copy). */
     GetModuleFileNameA(NULL, g_ini, MAX_PATH);
     strcpy(strrchr(g_ini, '\\') + 1, "hover.ini");
+    levels_init(g_ini, seed, seed_pinned);
+    g_present = !g_headless && !classic && run && present_wanted(g_ini);
+    g_hidden = g_headless || g_present;
     GetFullPathNameA(game, MAX_PATH - 1, g_game, NULL);
     if (g_game[strlen(g_game) - 1] != '\\') strcat(g_game, "\\");
     _snprintf(g_guest_exe, sizeof g_guest_exe - 1, "%sHOVER.EXE", g_game);
@@ -555,15 +684,17 @@ int main(int argc, char** argv) {
     AddVectoredExceptionHandler(0, crash);
     printf("Hover! recomp host\n  lifted functions in dispatch: %u\n", recomp_dispatch_count);
 
-    native32_shim_t* shims = g_headless ? g_headless_shims : g_shims;
+    native32_shim_t* shims = g_headless ? g_headless_shims : g_present ? g_present_shims : g_shims;
     int nshims = g_headless ? (int)(sizeof g_headless_shims / sizeof g_headless_shims[0])
-                            : (int)(sizeof g_shims / sizeof g_shims[0]);
+               : g_present ? (int)(sizeof g_present_shims / sizeof g_present_shims[0])
+                           : (int)(sizeof g_shims / sizeof g_shims[0]);
     uint32_t span = native32_map(g_guest_exe, HOVER_BASE);
     if (!span) { fprintf(stderr, "cannot map %s at 0x%08X\n", g_guest_exe, HOVER_BASE); return 1; }
     printf("  mapped HOVER.EXE: 0x%08X-0x%08X\n", HOVER_BASE, HOVER_BASE + span);
     if (native32_bind(HOVER_BASE, shims, nshims) != 0) return 1;
 
     if (pad_test) return pad_selftest();
+    if (levels_test) return levels_selftest();
     if (!run) {
         printf("\n(dry run: image mapped and bound; --run enters 0x%08X)\n", hover_entry_va);
         return 0;

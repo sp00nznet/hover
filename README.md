@@ -17,15 +17,16 @@ mode).
 | P0: identify the binary | done: `HOVER.EXE`, MSVC 2.x + static MFC 3, no protection; `DASHRES.DLL` is resources only |
 | Function catalog (`disasm32`) | 5,090 functions, 96.6% of the code bytes |
 | Lift (`run_lift.py`) | **whole program**: 5,135 functions, 0 lift errors, 426K lines of C |
-| Host (`build/hover.exe`, 32-bit, pcrecomp `native32`) | 350 imports: 338 bound to real Windows, 12 shimmed. Nothing native from the original runs |
-| Graphics | GDI and DIB sections, as the original: nothing to replace |
+| Host (`build/hover.exe`, 32-bit, pcrecomp `native32`) | 350 imports: 336 bound to real Windows, 14 shimmed (17 with the presenter). Nothing native from the original runs |
+| Graphics | The game draws with GDI as it always did; the **presenter** shows it in a resizable window of its own on Direct3D 11: sharp/smooth/nearest/integer scaling, borderless fullscreen (F11), CRT, retro dithering, vivid colour ([docs/presenter.md](docs/presenter.md)). `--classic` for the original window |
 | Title / attract screen | **runs** |
 | Gameplay | F2 starts level 1; driving, turning, the radar, flags, pods and the opponents all run. A two-minute soak ran to the opponents winning, with no fault |
 | Sound and music | `waveOut` and MIDI go to the real devices. Played in a windowed run; not checked note by note |
-| Windowed mode | plays (keyboard and mouse, the original's window and menus), plus a **Recomp** menu for the port's own settings |
+| Windowed mode | plays (keyboard and the original's menus), plus a **Recomp** menu for the port's own settings |
+| Level seeds | pinned, shown in the title, saved, and shared as codes like `L3-1789123456`; same seed, same level, pixel for pixel ([docs/levels.md](docs/levels.md)) |
 | Xbox controllers | XInput pads press the game's own bound keys; layout, deadzone and slot in `hover.ini` and the Recomp menu ([docs/controller.md](docs/controller.md)). Checked by a self-test on synthetic pad states; **not yet tried with a real pad** |
 | Headless mode | `--headless --record out.mp4`, with `--key` for scripted input. Never shows or activates a window ([docs/host.md](docs/host.md)) |
-| Conformance harness | **13/13** milestones (boot, start, drive, 1,000 frames, controller mapping, Recomp menu), 0 lift errors, 0 unresolvable tail calls ([tools/conformance.py](tools/conformance.py)) |
+| Conformance harness | **15/15** milestones (boot, start, drive, 1,000 frames on a pinned seed, controller mapping, share codes, Recomp menu), 0 lift errors, 0 unresolvable tail calls ([tools/conformance.py](tools/conformance.py)) |
 
 One toolkit fix was needed, [pcrecomp#24](https://github.com/sp00nznet/pcrecomp/pull/24), open until it merges
 ([docs/toolkit.md](docs/toolkit.md)).
@@ -123,7 +124,7 @@ Until the jump-table fix ([pcrecomp#24](https://github.com/sp00nznet/pcrecomp/pu
    ```
    build\hover.exe
    ```
-   Expected: `[bind] 0x00400000: 338 native, 0 guest, 12 shimmed, 0 unresolved`
+   Expected: `[bind] 0x00400000: 336 native, 0 guest, 14 shimmed, 0 unresolved`
    and `(dry run: image mapped and bound; --run enters 0x0043FB73)`.
 7. Play: `build\hover.exe --run`.
 
@@ -148,7 +149,10 @@ With an Xbox controller: RT/LT or the left stick drive, A jumps, X drops a
 wall, B cloaks, Start pauses, Back starts a new game.
 
 Settings live in `build\hover.ini` (written with its defaults on first
-run) and in the game's **Recomp** menu ([docs/controller.md](docs/controller.md)).
+run) and in the game's **Recomp** menu: *Level* (seeds, saved levels, share
+codes), *Video* (filter, window size, fullscreen, CRT, dithering) and
+*Controller*. F11 or Alt+Enter toggles fullscreen. Switching to another
+window pauses the game, as the original did; F3 continues.
 
 | Flag | |
 |---|---|
@@ -161,7 +165,10 @@ run) and in the game's **Recomp** menu ([docs/controller.md](docs/controller.md)
 | `--game DIR` | the game folder (default `game\hover`) |
 | `--watchdog S` | stop after S seconds and say where every thread was |
 | `--native-trace`, `--callbacks` | one line per call into Windows, or back from it |
-| `--pad-selftest` | check the controller mapping on synthetic pad states, then exit |
+| `--seed N` | pin the level seed for this run (the ini's `[levels] seed` otherwise) |
+| `--classic` | the game's own window instead of the presenter |
+| `--shot N:file.bmp` | save frame N exactly as the game drew it |
+| `--pad-selftest`, `--levels-selftest` | check the controller mapping or the share codes, then exit |
 
 `py -3 tools\addr2line.py ADDR ...` names host addresses from a fault report
 or a watchdog dump.

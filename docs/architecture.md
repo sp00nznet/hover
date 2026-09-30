@@ -47,8 +47,9 @@ mapped by hand, and running only lifted code (the guest `.text` is mapped
 non-executable).
 
 - **Guest → Windows.** Lifted `call [iat]` reaches native32's bridge, which
-  calls the real function with the guest's stack slots. 338 of the 350
-  imports go straight to Windows; 12 are shimmed in the host (17 headless).
+  calls the real function with the guest's stack slots. 336 of the 350
+  imports go straight to Windows; 14 are shimmed in the host (17 with the
+  presenter, 19 headless).
 - **Windows → guest.** MFC's window procedure, the dialog procedure and the
   50 ms multimedia-timer callback fault on the non-executable guest code, and
   native32's handler enters the lifted function.
@@ -56,6 +57,10 @@ non-executable).
   the UI thread through events. native32's machine lock hands the register
   file between them around every native call.
 - **DASHRES.DLL** is loaded as a data file, so none of its x86 runs.
+- **Host threads.** The presenter (`present.c`) owns the window you see and
+  draws the capture shadow with Direct3D 11; the game's own frame is
+  cloaked ([presenter.md](presenter.md)). The pad thread (`pad.c`) polls
+  XInput. Neither runs guest code or takes the machine lock.
 
 Everything the host changes about the game's view of the world is in
 `src/runtime/host.c`, and why is in [host.md](host.md).

@@ -10,6 +10,19 @@ versions follow [SemVer](https://semver.org/).
   the startup check is answered; rendering is unchanged.
 
 ### Added
+- The presenter: the game in a resizable window of the host's own on
+  Direct3D 11 (WARP, then GDI, as fallbacks), with sharp/smooth/nearest/
+  integer scaling, borderless fullscreen (F11, Alt+Enter), CRT (scanlines,
+  aperture grille, curvature, vignette), 16-bit and 8-bit ordered
+  dithering, and vivid colour. The game keeps its own frame, cloaked; the
+  menus, keys and focus are forwarded ([docs/presenter.md](docs/presenter.md)).
+  `--classic` for the original window.
+- Level seeds: `time()` returns the seed the host picks, so a level (walls
+  + seed) replays exactly. Recomp > Level pins it, saves levels, and copies
+  or plays share codes (`L3-1789123456`); the title shows level and seed.
+  `--seed N` ([docs/levels.md](docs/levels.md)).
+- `--shot N:file.bmp`, `--levels-selftest`; conformance now runs on a
+  pinned seed: 15/15.
 - Xbox controller support (XInput): the pad presses the keys the game has
   bound, read live from its key table, so in-game rebinding carries over.
   Pause and new game on Start/Back ([docs/controller.md](docs/controller.md)).

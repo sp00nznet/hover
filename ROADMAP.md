@@ -23,20 +23,14 @@ Where the ideas come from: gunman's D3D11 presenter, SimCity 2000's frontend
 
 ## 1. Graphics
 
-- **GPU presenter** from gunman's `present.c` + `present_d3d.c`: the game's
-  blits land in a frame buffer (the capture shadow already does this) and one
-  D3D11 draw puts it on screen. Needs 8-bit input: expand through the DIB
-  colour table to BGRA on the CPU (516x388 is nothing), or upload R8 + a
-  palette texture. GDI StretchBlt fallback when D3D11 is missing.
-- **Window and scaling**: resizable window, integer scale, aspect-correct
-  letterbox (4:3 or square pixels), borderless fullscreen (F11 / Alt+Enter).
-- **Filters**: nearest, sharp-bilinear, bilinear, Scale2x/EPX, xBR later.
-- **CRT**: scanlines, aperture grille / shadow mask, curvature, vignette,
-  bloom/glow (SimCity 2000's chain has each as its own slider).
-- **Dithering and colour**: the game renders 256 colours. Options: an
-  ordered-dither "authentic 1995 16-bit desktop" look, a de-dither/smooth
-  pass, "vivid" saturation (gunman), gamma, and colour-blind-safe palette
-  remaps for red/blue flags.
+- **The presenter** is in ([docs/presenter.md](docs/presenter.md)): its own
+  window on Direct3D 11, sharp/smooth/nearest/integer, borderless fullscreen,
+  CRT (scanlines, grille, curvature, vignette), 16/8-bit dithering, vivid.
+  Next: Scale2x/EPX and xBR, SimCity 2000's glow and per-effect sliders
+  (an ImGui overlay?), gamma, a de-dither pass, colour-blind-safe flag
+  colours, and mouse forwarding (the game's own mouse use is untested).
+- **The game's own Full Screen (F4)** is DISPDIB, which modern Windows lacks:
+  map it to the presenter's fullscreen.
 - **Higher internal resolution**: the renderer draws a 512-wide view into a
   DIB it allocates itself, and Customize Game has a Speed & Detail slider.
   Find the view size variables and raise them (1024, 2048 wide), with the
@@ -86,12 +80,10 @@ is placed at load from `srand(time(NULL))`** (0x004154DC): player and robot
 starts, the 28 pods, the flags, and the level itself in random-level mode.
 So a playable level is **`.MAZ` + a 32-bit seed**.
 
-- **Seeds**: shim `GetLocalTime` (only `time()` uses it) to pin the seed.
-  Show the seed on the level-start screen, `--seed N`, and a "replay this
-  seed" menu item. Same seed = same pods and flags, which is also what
-  racing a friend's time needs.
-- **Saved levels**: a small library in `levels\` of (maze, seed, name,
-  best time/score), favourites, and share codes (`MAZE2-1f3a9c` style).
+- **Seeds and saved levels** are in ([docs/levels.md](docs/levels.md)):
+  pinned seeds, the seed in the title, saved levels and share codes. Next:
+  names and best times per saved level, and share codes that carry a
+  custom maze once there are custom mazes.
 - **Level select**: the 21-entry level table at `0x004C4000` (music, maze,
   texture set, pods per type, robots, flags) is writable memory. Pick any
   entry, or edit the entry: robot count, pods per type, difficulty.

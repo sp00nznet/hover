@@ -11,13 +11,16 @@ stopped.
 |---|---|
 | `GetModuleHandleA(NULL)`, `GetModuleFileNameA`, `GetCommandLineA` | The guest is `HOVER.EXE` in `game\hover`, not the host: its hInstance (resources, window classes) must be `0x00400000` |
 | `GetDeviceCaps` | Only for the startup display check (`0x0041CEE3`): it is told the screen is a 256-colour palette device, so the "not running a 256 color video driver" box is gone. The renderer's own calls see the real display; it draws into its own 8-bit DIBs either way |
+| `GetLocalTime`, `GetTimeZoneInformation` | Level seeds: `time()` returns exactly the seed `levels.c` picks, so `srand` gets it ([levels.md](levels.md)) |
 | `LoadLibraryA("dashres.dll")` | Loaded with `LOAD_LIBRARY_AS_DATAFILE`: the dashboard bitmaps load as before and the DLL's original `DllMain` never runs |
 | `GetAsyncKeyState`, `GetKeyState` | Scripted keys (`--key`). Headless, the real keyboard is not read at all, so typing on the machine cannot steer a recording |
 | `BitBlt`, `StretchBlt` | Capture: see below |
 | `CreateWindowExA` | Remembers the frame window; headless, cloaks it (below) |
 | `ExitProcess` | Closes the `--record` pipe first, so the mp4 is complete |
 
-Headless adds `MessageBoxA` (to stderr; none appear in a normal run now), `DialogBoxParamA` (answered OK
+With the frame cloaked (headless, or the presenter showing the game) the
+host adds `ShowWindow` (never activates), `SetForegroundWindow` and
+`SetActiveWindow` (no-ops). Headless adds `MessageBoxA` (to stderr; none appear in a normal run now), `DialogBoxParamA` (answered OK
 unseen; the only one at startup is Quick Help), `ShowWindow` (never
 activates), `SetForegroundWindow` and `SetActiveWindow` (no-ops).
 

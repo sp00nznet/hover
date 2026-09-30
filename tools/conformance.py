@@ -46,12 +46,15 @@ MILESTONES = [
     ('the hovercraft moved', r'\[diff\] ([2-9]\d|100)% of the window changed'),
     ('1000 frames with no fault', r'\[capture\] 1000 frames: stopping'),
     ('controller mapping self-test', r'\[pad\] selftest OK'),
+    ('level 1 on the pinned seed', r'\[level\] level 1, seed 12345 \(pinned\)'),
+    ('share codes self-test', r'\[level\] selftest OK'),
     ('Recomp menu on the frame', r'\[menu\] Recomp menu added'),
 ]
 
 # Milliseconds from entry: F2 once the menu is up, then UP held long enough
 # that frames 150-210 are driving (level 1 loads in about 5 s), with a turn.
-PLAY = ['--frames', '1000', '--diff', '150,210',
+# The seed is pinned, so level 1 places everything the same way every run.
+PLAY = ['--frames', '1000', '--diff', '150,210', '--seed', '12345',
         '--key', 'F2@2000', '--key', 'UP@8000+12000', '--key', 'LEFT@14000+800']
 
 
@@ -66,9 +69,10 @@ def boot(seconds):
         out = out if isinstance(out, str) else out.decode(errors='replace')
     # The controller mapping has no controller to test against, so the host
     # tests it on synthetic pad states (pad.c, pad_selftest).
-    pad = subprocess.run([HOST, '--pad-selftest'], cwd=ROOT, capture_output=True, text=True,
-                         errors='replace', timeout=60)
-    out += pad.stdout + pad.stderr
+    for test in ('--pad-selftest', '--levels-selftest'):
+        t = subprocess.run([HOST, test], cwd=ROOT, capture_output=True, text=True,
+                           errors='replace', timeout=60)
+        out += t.stdout + t.stderr
     passed = [name for name, pat in MILESTONES if re.search(pat, out)]
     last = [l for l in out.splitlines() if l.startswith(('===', '[watchdog]', 'ICALL', 'ITAIL', '[diff]'))]
     return passed, code, last[:3]
