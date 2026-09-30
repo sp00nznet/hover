@@ -10,6 +10,22 @@ versions follow [SemVer](https://semver.org/).
   the startup check is answered; rendering is unchanged.
 
 ### Added
+- Online: players join and leave while the game runs. Seats nobody holds
+  are driven by their robot's AI (marked in the input record, decided by
+  the host); a late joiner replays the session's inputs from tick 0 to
+  catch up, then takes its seats at an agreed tick; a PC that leaves (or
+  goes quiet) hands its seats back to the AI. Open games (`--seats N`),
+  join codes (`HOVER-XXXXX-XXXXX`), and the game's own Start/Pause locked
+  while online.
+- Every player's own dashboard: radar, speed, height, pod counters and
+  gauges, score and flags.
+- Powerups for players in robot seats: they pick up pods and use
+  jump/wall/cloak (player 2: U/O/P), each effect on their own craft.
+- Player 1's hovercraft is drawn for the others (the human never had a
+  sprite), each sprite facing each viewer.
+- Teams by seat (`[mp] teams=`, `--teams`): co-op with player 1 or on the
+  robots' side; wins count a side's flags; hunters chase the nearest
+  human-side craft.
 - Online play: lockstep over UDP. The host takes over the game's 50 ms tick
   and runs it only when every seat's input has arrived; inputs are sampled
   3 ticks ahead and repeated for loss; the host relays everyone to
@@ -18,6 +34,13 @@ versions follow [SemVer](https://semver.org/).
   Multiplayer > Host / Join, `--host`, `--join`, `--clients`, `--local`
   ([docs/multiplayer.md](docs/multiplayer.md)).
 - Headless runs get a scratch profile per process, so two can run at once.
+
+### Fixed
+- On a small screen (a phone over RDP, a disconnected session) the game
+  fitted its frame to the desktop, no layout matched and nothing was
+  rendered: a cloaked frame now always gets its native 516x388.
+- The desync hash read past pods (0x100 bytes) as if they were crafts,
+  giving false alarms when a pod's effect was running.
 - Split screen for 2 to 4 players: players 2-4 drive robots of their own
   (one extra flag-runner per player in every level) with controllers 2-4,
   each with their own view. The frame draw runs once per player with the

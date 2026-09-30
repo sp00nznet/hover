@@ -49,8 +49,66 @@ PATCHES = [
     (0x004022BA, 'eax = MEM32(edi + 0x8218);', 'eax = MEM32(hover_cam_obj(edi) + 0x8C);'),
     # The render thread's frame-draw command: once per player.
     (0x0041F012, 'RECOMP_CALL(sub_00402250);', 'RECOMP_CALL(hover_render_views);'),
+    # Pods for players in robot seats (mp.c). The pods' pickup check
+    # (0x0040CB40) takes only CHumanPlayer, unless the pod is a flag: a seat's
+    # craft passes too, AI robots still do not.
+    (0x0040CB5B, 'if (TEST_NZ(_flag_a, _flag_b)) goto', 'if (TEST_NZ(_flag_a, _flag_b) || mp_is_seat(ebp)) goto'),
+    # CTempWallPod::Use faces the wall along the human's heading (doc+0x832A =
+    # human+0x19E); ebx is the pod's owner there, so use the owner's.
+    (0x0042B52C, 'MEM16(eax + 0x832A)', 'MEM16(ebx + 0x19E)'),
+    # The map eraser erases player 1's map: not when a seat picks it up.
+    (0x00422589, 'if (CMP_NE(_flag_a, _flag_b)) goto', 'if (CMP_NE(_flag_a, _flag_b) || mp_is_seat(eax)) goto'),
+    # The dashboard reads the human too: this pass's craft instead. Radar
+    # centre and heading (0x00407160, and 0x00404BB0 per blip), the height
+    # gauge in the frame draw, the speed dial (0x00405A10) and the speed bar
+    # (0x00407430): CPlayer +0x19E heading, +0x1A4 height, +0x1AC/+0x1B0
+    # velocity, +0x1D8 top speed.
+    (0x004071A2, 'ebp = edi + 0x818C;', 'ebp = hover_cam_obj(edi);'),
+    (0x004071C0, 'MEM16(edi + 0x832A)', 'MEM16(hover_cam_obj(edi) + 0x19E)'),
+    (0x004052E7, 'MEM16(eax + 0x832A)', 'MEM16(hover_cam_obj(eax) + 0x19E)'),
+    (0x004022E5, 'MEM32(edi + 0x8330)', 'MEM32(hover_cam_obj(edi) + 0x1A4)'),
+    (0x00405A2B, 'MEM32(eax + 0x8338)', 'MEM32(hover_cam_obj(eax) + 0x1AC)'),
+    (0x00405A31, 'MEM32(eax + 0x833C)', 'MEM32(hover_cam_obj(eax) + 0x1B0)'),
+    (0x00408018, 'MEM32(edx + 0x8364)', 'MEM32(hover_cam_obj(edx) + 0x1D8)'),
+    (0x00408047, 'MEM32(ecx + 0x8338)', 'MEM32(hover_cam_obj(ecx) + 0x1AC)'),
+    (0x00408076, 'MEM32(ecx + 0x833C)', 'MEM32(hover_cam_obj(ecx) + 0x1B0)'),
+    # The dashboard blit (0x00407430) draws only what changed, straight to the
+    # window, unless the game's own full-dashboard option ([0x004C4CA8]) is
+    # on: then it composes all of it off screen and blits it whole. Every
+    # player's cell needs the whole of its own, so several views turn it on.
+    (0x00407448, 'eax = MEM32(0x4C4CA8);', 'eax = hover_hud_full();'),
+    (0x00408337, 'if (CMP_EQ(_flag_a, _flag_b)) goto L_004083C3;',
+     'if (!hover_hud_full()) goto L_004083C3;'),
+    # The renderer's visibility test for each sprite: a pass does not draw
+    # the sprite of the craft it sees from.
+    (0x00406343, 'RECOMP_CALL(sub_00405B90);', 'RECOMP_CALL(hover_sprite_visible);'),
+    # The level teardown deletes the world, and with it the human's sprite
+    # (the human, unlike the robots, outlives the level): forget it.
+    (0x004149C4, 'MEM32(esi + 0x188) = edi;', 'MEM32(esi + 0x188) = edi; MEM32(esi + 0x818C + 0x78) = 0;'),
+    # A robot flag taken: the flag gauge and the "all flags taken" test count
+    # the taker's side, not the taker alone.
+    (0x0041AFF6, 'edx = MEM32(ecx + 0xC0);', 'edx = hover_team_flags(ecx);'),
+    (0x0041B05C, 'ecx = MEM32(eax + 0xC0);', 'ecx = hover_team_flags(eax);'),
+    # Hunters look for, and then chase, the nearest craft on the human's side
+    # (ecx/esi: the AI state asking).
+    (0x0042ED09, 'ecx = eax + 0x818C;', 'ecx = hover_quarry(eax, ecx);'),
+    (0x0040A810, 'eax = eax + 0x818Cu;', 'eax = hover_quarry(eax, esi);'),
+] + [
+    # Pod pickup/Use/Think write their gauges into the view (0x00401140):
+    # a seat's go to that seat's own block instead (esi is the pod, +0x88 its owner).
+    (va, 'RECOMP_CALL(sub_00401140);',
+     'RECOMP_CALL(sub_00401140); eax = hover_pod_hud(eax, MEM32(esi + 0x88));')
+    for va in (0x0042AB55,                                   # jump: pickup
+               0x0042B297, 0x0042B422, 0x0042B0C4,           # wall: pickup, Use, Think
+               0x0042A7F5, 0x0042A918, 0x0042A99E, 0x0042A6A6, 0x0042A705,  # cloak
+               0x004143B6, 0x004228A5, 0x0042C476,           # speed Think; slow pickup, Think
+               0x004183A3, 0x0040DEC6)                       # invincible pickup, Think
 ]
-PATCH_DECLS = 'uint32_t hover_cam_obj(uint32_t doc);\nvoid hover_render_views(void);\n'
+PATCH_DECLS = ('uint32_t hover_cam_obj(uint32_t doc);\nvoid hover_render_views(void);\n'
+               'int mp_is_seat(uint32_t craft);\nuint32_t hover_pod_hud(uint32_t view, uint32_t owner);\n'
+               'uint32_t hover_hud_full(void);\n'
+               'void hover_sprite_visible(void);\nuint32_t hover_team_flags(uint32_t craft);\n'
+               'uint32_t hover_quarry(uint32_t doc, uint32_t state);\n')
 
 
 def apply_patches(out):

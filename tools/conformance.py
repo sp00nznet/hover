@@ -55,6 +55,10 @@ MILESTONES = [
     ('online: in sync at tick 400 on both PCs',
      r'(?s)\[online-host\] [^\n]*in sync at tick 400.*\[online-client\] [^\n]*in sync at tick 400'),
     ('online: a one-unit nudge is caught', r'\[online-desync\] .*DESYNC at tick 120'),
+    ('online: a late joiner replays, catches up and takes its seat',
+     r'\[online-late\] .*caught up: our seats are ours from tick'),
+    ('online: the late joiner stays in sync', r'\[online-late\] .*caught up.*in sync at tick 800'),
+    ('online: its seat goes back to the AI when it leaves', r'\[online-late\] .*seat 2-2 left: the AI drives it now'),
 ]
 
 # Split screen: player 2 in a robot seat, driven by I/J/K/L, its own view.
@@ -68,14 +72,15 @@ PLAY = ['--frames', '1000', '--diff', '150,210', '--seed', '12345',
         '--key', 'F2@2000', '--key', 'UP@8000+12000', '--key', 'LEFT@14000+800']
 
 
-def online(port, host_extra, client_extra, frames):
+def online(port, host_extra, client_extra, frames, join_after=1, client_frames=None):
     """A host and a client on this PC, over localhost: both logs."""
-    common = ['--headless', '--run', '--watchdog', '120', '--frames', str(frames)]
-    h = subprocess.Popen([HOST] + common + ['--host', str(port)] + host_extra, cwd=ROOT,
-                         stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, errors='replace')
-    time.sleep(1)
-    c = subprocess.run([HOST] + common + ['--join', '127.0.0.1:%d' % port] + client_extra, cwd=ROOT,
-                       capture_output=True, text=True, errors='replace', timeout=180)
+    common = ['--headless', '--run', '--watchdog', '150']
+    h = subprocess.Popen([HOST] + common + ['--frames', str(frames), '--host', str(port)] + host_extra,
+                         cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, errors='replace')
+    time.sleep(join_after)
+    c = subprocess.run([HOST] + common + ['--frames', str(client_frames or frames),
+                                          '--join', '127.0.0.1:%d' % port] + client_extra,
+                       cwd=ROOT, capture_output=True, text=True, errors='replace', timeout=200)
     try:
         hout = h.communicate(timeout=60)[0]
     except subprocess.TimeoutExpired:
@@ -99,11 +104,16 @@ def boot(seconds):
                        capture_output=True, text=True, errors='replace', timeout=150)
     out += '\n[split] ' + (t.stdout + t.stderr).replace('\n', ' ') + '\n'
     # Online: lockstep over localhost, both driving; then a deliberate desync.
-    hout, cout = online(7795, ['--key', 'UP@12000+6000'],
+    hout, cout = online(7795, ['--clients', '1', '--key', 'UP@12000+6000'],
                         ['--key', 'UP@12000+6000', '--key', 'RIGHT@13000+1500'], 520)
     out += '\n[online-host] ' + hout + '\n[online-client] ' + cout + '\n'
-    hout, cout = online(7796, [], ['--net-desync-test', '100'], 300)
+    hout, cout = online(7796, ['--clients', '1'], ['--net-desync-test', '100'], 300)
     out += '\n[online-desync] ' + hout + ' ' + cout + '\n'
+    # Drop in, drop out: an open 4-seat game; a client joins 15 s in, replays
+    # the game so far, takes its seat, plays, and quits (saying goodbye).
+    hout, cout = online(7797, ['--seats', '4', '--key', 'UP@9000+60000'], ['--key', 'UP@25000+20000'],
+                        1900, join_after=15, client_frames=900)
+    out += '\n[online-late] ' + cout + ' ' + hout + '\n'
     for test in ('--pad-selftest', '--levels-selftest'):
         t = subprocess.run([HOST, test], cwd=ROOT, capture_output=True, text=True,
                            errors='replace', timeout=60)

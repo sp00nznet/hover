@@ -28,3 +28,10 @@ int           mp_command(UINT id);
 /* Called from the lifted frame draw (patched in by run_lift.py). */
 uint32_t hover_cam_obj(uint32_t doc);
 void     hover_render_views(void);
+int      mp_is_seat(uint32_t craft);                       /* seat 1.. whose craft this is, or 0 */
+uint32_t hover_pod_hud(uint32_t view, uint32_t owner);     /* pod gauges: the view, or a seat's block */
+void     hover_sprite_visible(void);
+uint32_t hover_team_flags(uint32_t craft);
+uint32_t hover_quarry(uint32_t doc, uint32_t state);
+void     mp_get_teams(char* out);              /* MP_MAX_SEATS letters and a NUL: the online session's */
+void     mp_set_teams(const char* teams);    /* one letter a seat, h or r; "hr" is the default for two */

@@ -94,15 +94,65 @@ table at 0x4609A0) are chosen by the window size.
   player's cell of the capture buffer (2 side by side, 3-4 two by two), and
   blits outside a pass (the dashboard's background, painted in `WM_PAINT`)
   in every cell. The presenter fits the bigger picture to the monitor.
-- Players in robot seats play for the robots, so two players is one against
-  the other, with each side's AI.
+- **Controls.** Controller 2-4 for players 2-4; player 2 also has I/J/K/L to
+  drive and U/O/P for jump/wall/cloak on the keyboard.
 
-**Not yet:** the HUD in players 2-4's views is player 1's (radar, flags,
-score, powerups: they all read the one human and the one view); robots
-cannot pick up powerups, so players 2-4 have none; the human craft has no
-sprite, so players 2-4 cannot see player 1 (robots carry sprite objects at
-`+0x220/+0x264/+0x2F4`); sounds play only for the human. A change of player
-count takes effect from the next level load.
+- **Dashboards.** Each view's dashboard is its own player's. The radar
+  (centre and heading), the speed dial and bar and the height gauge read the
+  human; those reads are patched to `hover_cam_obj()` too. The counters,
+  score, flag rows and pod gauges are numbers the view keeps (written by the
+  game as they change, drawn only when marked dirty): `hover_render_views()`
+  marks them dirty every pass and, for a robot seat, swaps in that seat's own
+  for the pass: its pod counts (the craft's `+0x114` jumps, `+0xF8` cloaks,
+  `+0xDC` walls), its pod gauges (its own block, below), its side's score and
+  the flags it carries. The dashboard is otherwise drawn incrementally
+  straight to the window; with several views the game's own full-dashboard
+  mode (`[0x004C4CA8]`, composed off screen, blitted whole) is forced on, so
+  every cell gets a whole dashboard of its own.
+
+  ![Two players, each with their own radar, speed and pods](img/mp-split-hud.png)
+
+- **Powerups for every seat.** The pods' pickup check (0x0040CB40) took only
+  the human; a seat's craft passes too (AI robots still do not). A seat's
+  jump/wall/cloak buttons use its pods through the game's own Use (vtable
+  slot 9, as the human's key handler 0x0040B540 does), one per press, jump
+  with the human's checks (not in the air, not already jumping). The wall
+  faces the seat's heading (0x0042B52C read the human's), a map eraser a
+  seat takes does not wipe player 1's map (0x00422589), and every pod gauge
+  write (14 sites through 0x00401140) goes to the seat's own block
+  (`hover_pod_hud`), never to player 1's view.
+- **Player 1 is seen.** The human never had a sprite: a robot's vtable slots
+  15/16 (0x0040A4C0/0x0040A590) pick a sprite frame and create and move a
+  sprite (`craft+0x78`, a 0x70-byte object in the world's draw list
+  `[doc+0x188]`), and the human's are `CPlayer`'s plain ones. With more than
+  one seat the human runs the robot versions (they use only `CPlayer` fields),
+  the level teardown forgets the sprite with the world it lives in
+  (0x004149C4), and each pass turns every sprite to face its own camera
+  (`face_sprites`, the same 32 frames and mirrors the game uses) and skips
+  the camera craft's own (0x00406343, `hover_sprite_visible`).
+
+  ![Player 1's hovercraft, seen from player 2's view](img/mp-player1-seen.png)
+
+- **Teams.** The game decides sides by class: `CFlag`'s take test
+  (0x00414470) gives robot flags only to the human and human flags only to
+  robots. It is replaced (through its virtual call) by a test by side, so a
+  seat can play on either: `[mp] teams=` or `--teams`, one letter a seat,
+  `h` or `r` (`hh` puts player 2 with player 1; the default is every robot
+  seat on the robots' side). The scoring (0x0041AE40) already goes by the
+  flag's side; its "all flags taken" test and flag gauge now count the
+  side's flags, not the taker's alone (0x0041AFF6, 0x0041B05C,
+  `hover_team_flags`). Hunters look for and chase the nearest craft on the
+  human's side instead of player 1 alone (0x0042ED09, 0x0040A810,
+  `hover_quarry`). Online, the host's teams are part of the session.
+
+**Not yet:** the radar's explored walls are shared: the wall renderer sets
+bit 8 of each wall's `+0x24` byte (0x402671, 0x4029ED, 0x402F4B, 0x40E3F4;
+the radar tests it at 0x401C3A, 0x401D47, 0x404C05, 0x404EFE; a level clears
+it at 0x4225D9/0x4225F4), so every pass explores for everyone. A cloaked
+seat is not hidden from the others' views; seats get no pickup sounds; a
+seat on the robots' side is not chased by hunters; player 1 wears the
+robots' sprite art (there is no other). A change of player count takes effect
+from the next level load.
 
 Checked headless: 2 and 4 players on a pinned seed, each view distinct and
 following its own craft (docs: the conformance run has a 2-player run), and
@@ -114,13 +164,31 @@ windowed at the console (1824x685 for two players on a 1920x1080 monitor).
 inputs, and only the inputs cross the network.
 
 **Starting one.** The host chooses *Recomp > Multiplayer > Host an online
-game* (or `--host [PORT]`, default UDP 7795, `--clients N` for how many PCs
-to wait for); each other PC copies the host's address and chooses *Join*
-(or `--join HOST[:PORT]`). A PC brings as many local players as its split
-screen is set to (`--local N`), up to 4; the host's first player is seat 1
-(the game's own hovercraft), every other player a robot seat. When the last
-PC joins, every PC starts the same new game: the host's *Start At* level on
-the host's seed.
+game* (or `--host [PORT]`, default UDP 7795): the game starts at once with
+`[net] seats=` seats (`--seats N`, default 8), and every seat nobody holds is
+a robot. The host's join code (`HOVER-XXXXX-XXXXX`, its address and port, a
+Tailscale address first if it has one) goes on the clipboard; anyone copies
+it and chooses *Join* (or `--join CODE` / `--join HOST[:PORT]`). A PC brings
+as many local players as its split screen is set to (`--local N`), up to 4.
+`--clients N` makes the host wait for N PCs and start them together instead.
+
+**Joining and leaving while it runs.**
+
+- *Seats.* The host is the one authority on who holds which seat. A seat
+  nobody holds carries an AI mark in the input record, so on that tick every
+  PC lets the robot's own AI drive it: empty seats, players who left, and
+  players still catching up.
+- *Joining.* A late joiner gets the session's start (its first level and
+  seed) and replays every input since tick 0 at full speed, pulling the log
+  from the host; the desync hashes check the replay. Caught up, it says so,
+  and the host gives it its seats from 20 ticks ahead, which everyone
+  already has the AI's records for.
+- *Leaving.* A PC that quits says goodbye (every exit path), or is counted
+  gone after 4 s of silence; its seats go back to the AI from the first tick
+  the host has no input for. If the host leaves, the game ends for everyone.
+- *The game's own Start Game, Start At and Pause* would change one PC's game
+  and not the others', so they are greyed and their keys dropped while
+  online.
 
 **How it stays in step.**
 
@@ -148,20 +216,21 @@ the host's seed.
   and forwards its hash so every client compares too. A mismatch stops the
   game on every PC and names the tick.
 
-**Checked:** two instances on one PC over localhost, both driving: in sync
-through tick 400, headless and with two presenter windows. A deliberate
-one-unit nudge of one PC's craft at tick 100 (`--net-desync-test 100`) is
-reported at tick 120 on both. Both are conformance milestones.
+**Checked** (all conformance milestones), on one PC over localhost: host
+and client both driving stay in sync through tick 400; a deliberate one-unit
+nudge at tick 100 (`--net-desync-test 100`) is reported at tick 120 on both;
+an open 4-seat game where a client joins 15 s in, replays the game so far,
+takes its seat at tick ~345 and stays in sync through tick 800, and whose
+seat goes back to the AI when it quits. Separately, with powerups picked up
+and used by a seat, in sync through tick 2,200.
 
 **Not yet:**
 
-- Leaving: a PC that quits stalls everyone at "waiting for the other
-  players"; restart to leave. Drop-in/out is the next step (a seat nobody
-  holds reverts to a robot at an agreed tick; a joiner replays the inputs).
-- Addresses: direct IP only (a LAN, Tailscale, or UDP port 7795 forwarded to
-  the host). A relay with join codes would remove the port forwarding.
-- The game's own menu (*Start Game*, *Pause*) still works with the mouse on
-  one PC and would desync the session: leave it alone while online.
-- Everything the split screen lacks (players 2+'s HUD, powerups, player 1's
-  missing sprite) applies online too.
+- Addresses: direct only (a LAN, Tailscale, or UDP 7795 forwarded to the
+  host); the join code is only a readable address. A relay would remove the
+  port forwarding.
+- A joiner replays the whole session, so a long game takes a while to join
+  (it replays at the speed the renderer allows).
+- Everything the split screen lacks (shared radar exploration, cloak,
+  sounds) applies online too.
 - Every PC needs the same build and the same game files.

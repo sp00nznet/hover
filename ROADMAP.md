@@ -111,19 +111,18 @@ while the game runs**. The research is done ([docs/multiplayer.md](docs/multipla
 crafts are dynamic lists, a robot can be driven by a player, the renderer
 can draw any craft's view, and the simulation is deterministic per tick.
 
-1. **Split screen, 2-4 players**: in. Next for it: a HUD per player (radar,
-   flags, score and powerups read the one human and the one view), powerups
-   for players in robot seats (the pickup check, 0x40CB40, and Use), a
-   sprite for the human craft so the others can see player 1, and sounds
-   for every local player.
-2. **Online, lockstep**: in (gate, per-tick inputs, relay, desync check).
-   Next: a small relay with join codes (no port forwarding), leaving
-   cleanly, and locking the game's own Start/Pause menu items while online.
-3. **Teams and modes**: players on both teams (the flag rule goes by class,
-   0x414470: make it go by seat), co-op against the robots, free-for-all.
-4. **16 players, drop-in/out**: a seat nobody holds is a robot again; a
-   joiner catches up by replaying the session's inputs, or a snapshot.
-   Bigger generated maps (section 4) for the start spots 16 crafts need.
+1. **Split screen, 2-4 players**: in, with a dashboard, powerups and a
+   side for every player, and player 1 visible to the others. Next: radar
+   exploration per player (a bit per view on the walls' seen flags), a
+   cloaked seat hidden from the others, hunters chasing robot-side players,
+   pickup sounds for every local player.
+2. **Online, lockstep**: in, with open seats, drop-in/out and join codes.
+   Next: a relay (no port forwarding), faster catch-up for long sessions (a
+   snapshot of the world instead of replaying every tick), a lobby screen.
+3. **Modes**: co-op against the robots, versus, free-for-all (every seat
+   its own side), capture limits and timers.
+4. **16 players**: the seats and the netcode are there. Bigger generated
+   maps (section 4) for the start spots 16 crafts need.
 5. **Ghost races**: record a run (seed + inputs), replay it as another craft.
 
 ## 6. Mods

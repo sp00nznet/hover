@@ -125,7 +125,7 @@ static HWND g_main;                      /* the "Hover!" frame window */
 static char g_ini[MAX_PATH];             /* hover.ini, beside the exe */
 static int  g_present;                   /* the presenter shows the game (present.c) */
 static int  g_hidden;                    /* the frame is cloaked: headless, or the presenter */
-static int  g_net_port, g_net_clients = 1, g_net_local; /* --host / --join, started with the frame */
+static int  g_net_port, g_net_clients, g_net_local, g_net_seats; /* --host / --join, started with the frame */
 static const char* g_net_join;
 
 /* ------------------------------------------------------------ Recomp menu */
@@ -162,7 +162,32 @@ static int recomp_command(UINT id) {
     return 1;
 }
 
+/* Online, the game's own Start Game, Start At and Pause would change one
+ * PC's game and not the others': they are greyed, and their commands (by
+ * menu or accelerator) dropped. The game's own menu gives their ids. */
+static int game_item_locked(HMENU bar, UINT id) {
+    static const char* const locked[] = { "&Start Game", "S&tart At", "&Pause" };
+    char t[64];
+    if (!net_playing() || !bar) return 0;     /* the session's own F2 must get through */
+    HMENU game = GetSubMenu(bar, 0);
+    for (int i = 0; game && i < GetMenuItemCount(game); i++) {
+        if (GetMenuItemID(game, i) != id || !GetMenuStringA(game, i, t, sizeof t, MF_BYPOSITION)) continue;
+        for (int k = 0; k < 3; k++)
+            if (!strncmp(t, locked[k], strlen(locked[k]))) return 1;
+    }
+    return 0;
+}
+
+static void lock_game_items(HMENU popup) {
+    for (int i = 0; i < GetMenuItemCount(popup); i++) {
+        UINT id = GetMenuItemID(popup, i);
+        if (id != (UINT)-1 && game_item_locked(GetMenu(g_main), id))
+            EnableMenuItem(popup, i, MF_BYPOSITION | MF_GRAYED);
+    }
+}
+
 static void recomp_update_menu(HMENU popup) {
+    lock_game_items(popup);
     levels_update_menu(popup);
     mp_update_menu(popup);
     present_update_menu(popup);
@@ -190,7 +215,13 @@ static LRESULT CALLBACK host_wndproc(HWND h, UINT m, WPARAM w, LPARAM l) {
             return 0;
         if (m == WM_NCACTIVATE && !w) return DefWindowProcA(h, m, w, l);
     }
+    if (m == WM_GETMINMAXINFO && g_hidden) {  /* a cloaked frame is never on a screen: no screen caps it */
+        LRESULT r = CallWindowProcA(prev, h, m, w, l);
+        ((MINMAXINFO*)l)->ptMaxTrackSize.x = ((MINMAXINFO*)l)->ptMaxTrackSize.y = 4096;
+        return r;
+    }
     if (m == WM_COMMAND && HIWORD(w) == 0 && recomp_command(LOWORD(w))) return 0;
+    if (m == WM_COMMAND && game_item_locked(GetMenu(g_main), LOWORD(w))) return 0;
     LRESULT r = CallWindowProcA(prev, h, m, w, l);
     if (m == WM_INITMENUPOPUP) recomp_update_menu((HMENU)w);
     return r;
@@ -222,13 +253,27 @@ static void shim_CreateWindowExA(void) {
         subclass(h);
         if (a[3] & WS_VISIBLE) ShowWindow(h, SW_SHOWNOACTIVATE);
     }
+    if (is_main && h && g_hidden) {
+        /* The game fits its frame to the desktop and then only accepts its
+         * own layouts (516x388 client and friends). On a small screen, a
+         * phone over RDP or a disconnected session (480 wide), the client
+         * came out 484 wide, no layout matched, and no renderer was made.
+         * A cloaked frame is shown nowhere, so it gets the native size. */
+        RECT rc, wr;
+        GetClientRect(h, &rc);
+        GetWindowRect(h, &wr);
+        if (rc.right != 516 || rc.bottom != 388)
+            SetWindowPos(h, NULL, 0, 0, wr.right - wr.left + 516 - rc.right, wr.bottom - wr.top + 388 - rc.bottom,
+                         SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
+    }
     if (is_main && h) {
         g_main = h;
         if (!g_hidden) subclass(h);              /* hidden did it above */
         net_init(g_ini, h, g_headless);
         recomp_menu(h);
         levels_attach(h, set_title);
-        if (g_net_port) net_host(g_net_port, g_net_clients, g_net_local ? g_net_local : mp_local_count());
+        if (g_net_port) net_host(g_net_port, g_net_clients, g_net_local ? g_net_local : mp_local_count(),
+                                 g_net_seats);
         if (g_net_join) net_join(g_net_join, g_net_local ? g_net_local : mp_local_count());
         if (!g_headless) pad_start(g_ini, h);    /* headless reads no real input */
         if (g_present) {
@@ -443,6 +488,7 @@ static void save_bmp(const char* path) {
 static char g_headless_key[96];          /* this run's scratch HKCU (main) */
 
 static void finish(void) {
+    net_leave();                         /* every way out says goodbye: the others need not wait */
     if (g_headless_key[0]) {             /* the real HKCU again, then drop the scratch copy */
         RegOverridePredefKey(HKEY_CURRENT_USER, NULL);
         RegDeleteTreeA(HKEY_CURRENT_USER, g_headless_key);
@@ -565,7 +611,9 @@ static void shim_BitBlt(void) {
     HDC dst = (HDC)(uintptr_t)ARG(0), src = (HDC)(uintptr_t)ARG(5);
     int x = ARG(1), y = ARG(2), w = ARG(3), h = ARG(4), sx = ARG(6), sy = ARG(7);
     BOOL ok = BitBlt(dst, x, y, w, h, src, sx, sy, ARG(8));
-    if (ok) mirror(dst, x, y, w, h, src, sx, sy, -1, -1, ARG(8));
+    /* A cloaked frame in a session with no display fails the real blit;
+     * the picture is still the game's, so the shadow takes it. */
+    if (ok || g_hidden) mirror(dst, x, y, w, h, src, sx, sy, -1, -1, ARG(8));
     RET(ok, 9);
 }
 
@@ -573,7 +621,7 @@ static void shim_StretchBlt(void) {
     HDC dst = (HDC)(uintptr_t)ARG(0), src = (HDC)(uintptr_t)ARG(5);
     int x = ARG(1), y = ARG(2), w = ARG(3), h = ARG(4), sx = ARG(6), sy = ARG(7);
     BOOL ok = StretchBlt(dst, x, y, w, h, src, sx, sy, ARG(8), ARG(9), ARG(10));
-    if (ok) mirror(dst, x, y, w, h, src, sx, sy, ARG(8), ARG(9), ARG(10));
+    if (ok || g_hidden) mirror(dst, x, y, w, h, src, sx, sy, ARG(8), ARG(9), ARG(10));
     RET(ok, 11);
 }
 
@@ -691,8 +739,9 @@ static DWORD WINAPI watchdog(LPVOID unused) {
 
 int main(int argc, char** argv) {
     const char* game = "game\\hover";
-    int run = 0, pad_test = 0, levels_test = 0, classic = 0, seed_pinned = 0, players = 0;
+    int run = 0, pad_test = 0, levels_test = 0, net_test = 0, classic = 0, seed_pinned = 0, players = 0;
     uint32_t seed = 0;
+    const char* teams = NULL;
     for (int i = 1; i < argc; i++) {
         int n = recomp_trace_arg(argc, argv, i);
         if (n) { i += n - 1; continue; }
@@ -702,10 +751,13 @@ int main(int argc, char** argv) {
         else if (!strcmp(argv[i], "--levels-selftest")) levels_test = 1;
         else if (!strcmp(argv[i], "--classic")) classic = 1;
         else if (!strcmp(argv[i], "--players") && i + 1 < argc) players = atoi(argv[++i]);
+        else if (!strcmp(argv[i], "--teams") && i + 1 < argc) teams = argv[++i];
         else if (!strcmp(argv[i], "--host")) g_net_port = i + 1 < argc && argv[i + 1][0] != '-' ? atoi(argv[++i]) : 7795;
         else if (!strcmp(argv[i], "--clients") && i + 1 < argc) g_net_clients = atoi(argv[++i]);
         else if (!strcmp(argv[i], "--join") && i + 1 < argc) g_net_join = argv[++i];
         else if (!strcmp(argv[i], "--local") && i + 1 < argc) g_net_local = atoi(argv[++i]);
+        else if (!strcmp(argv[i], "--seats") && i + 1 < argc) g_net_seats = atoi(argv[++i]);
+        else if (!strcmp(argv[i], "--net-selftest")) net_test = 1;
         else if (!strcmp(argv[i], "--net-desync-test") && i + 1 < argc) net_desync_test(atoi(argv[++i]));
         else if (!strcmp(argv[i], "--seed") && i + 1 < argc) { seed = strtoul(argv[++i], NULL, 10); seed_pinned = 1; }
         else if (!strcmp(argv[i], "--key") && i + 1 < argc) {
@@ -737,8 +789,8 @@ int main(int argc, char** argv) {
         else if (!strcmp(argv[i], "--callbacks")) native32_trace_callbacks = 1;
         else {
             printf("usage: hover [--run] [--headless] [--record out.mp4] [--frames N] [--diff A,B]\n"
-                   "             [--key NAME@MS[+HOLD]] [--seed N] [--players N] [--classic]\n"
-                   "             [--host [PORT]] [--clients N] [--join HOST[:PORT]] [--local N]\n"
+                   "             [--key NAME@MS[+HOLD]] [--seed N] [--players N] [--teams hrr...] [--classic]\n"
+                   "             [--host [PORT]] [--clients N] [--seats N] [--join HOST[:PORT]|CODE] [--local N]\n"
                    "             [--game game\\hover] [--watchdog S] [--native-trace] [--callbacks]\n");
             recomp_trace_help();
             return argv[i][1] == 'h' || argv[i][2] == 'h' ? 0 : 1;
@@ -750,6 +802,7 @@ int main(int argc, char** argv) {
     strcpy(strrchr(g_ini, '\\') + 1, "hover.ini");
     levels_init(g_ini, seed, seed_pinned);
     mp_init(g_ini, players, key_down);
+    if (teams) mp_set_teams(teams);           /* --teams: this run only */
     g_present = !g_headless && !classic && run && present_wanted(g_ini);
     g_hidden = g_headless || g_present;
     GetFullPathNameA(game, MAX_PATH - 1, g_game, NULL);
@@ -787,6 +840,7 @@ int main(int argc, char** argv) {
 
     if (pad_test) return pad_selftest();
     if (levels_test) return levels_selftest();
+    if (net_test) return net_selftest();
     if (!run) {
         printf("\n(dry run: image mapped and bound; --run enters 0x%08X)\n", hover_entry_va);
         return 0;
