@@ -27,6 +27,6 @@ versions follow [SemVer](https://semver.org/).
 - `Setup.cmd`: the one-click route, running the same steps as the README.
 
 ### Toolkit
-- Needs pcrecomp `fix/generate-jump-table-self-arm` (an entry never points
+- Needs [pcrecomp#24](https://github.com/sp00nznet/pcrecomp/pull/24) (an entry never points
   into its own jump table); without it the game faults as level 1 starts
   ([docs/toolkit.md](docs/toolkit.md)).

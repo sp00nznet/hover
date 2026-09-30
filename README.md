@@ -26,7 +26,7 @@ mode).
 | Headless mode | `--headless --record out.mp4`, with `--key` for scripted input. Never shows or activates a window ([docs/host.md](docs/host.md)) |
 | Conformance harness | **11/11** milestones (boot, start, drive, 1,000 frames), 0 lift errors, 0 unresolvable tail calls ([tools/conformance.py](tools/conformance.py)) |
 
-One toolkit fix was needed and is on a pcrecomp branch until it merges
+One toolkit fix was needed, [pcrecomp#24](https://github.com/sp00nznet/pcrecomp/pull/24), open until it merges
 ([docs/toolkit.md](docs/toolkit.md)).
 
 ## Screenshots
@@ -82,7 +82,7 @@ some-folder\
   hover\                        <- this repository
 ```
 
-Until the jump-table fix merges, use its branch:
+Until the jump-table fix ([pcrecomp#24](https://github.com/sp00nznet/pcrecomp/pull/24)) merges, use its branch:
 `git -C tools checkout fix/generate-jump-table-self-arm` ([docs/toolkit.md](docs/toolkit.md)).
 
 1. Python packages:

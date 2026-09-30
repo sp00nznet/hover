@@ -2,7 +2,7 @@
 
 ## Next
 
-- **Merge the toolkit fix** and drop the branch pin from `Setup.cmd` and the
+- **Merge the toolkit fix** ([pcrecomp#24](https://github.com/sp00nznet/pcrecomp/pull/24)) and drop the branch pin from `Setup.cmd` and the
   README.
 - **Win a level.** Every recorded run so far ended with the opponents taking
   the red flags. A scripted route that collects the blue flags would reach
