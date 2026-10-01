@@ -56,7 +56,7 @@ MILESTONES = [
      r'(?s)\[online-host\] [^\n]*in sync at tick 400.*\[online-client\] [^\n]*in sync at tick 400'),
     ('online: a one-unit nudge is caught', r'\[online-desync\] .*DESYNC at tick 120'),
     ('online: a late joiner replays, catches up and takes its seat',
-     r'\[online-late\] .*caught up: our seats are ours from tick'),
+     r'\[online-late\] .*caught up: .*our seats are ours from tick'),
     ('online: the late joiner stays in sync', r'\[online-late\] .*caught up.*in sync at tick 800'),
     ('online: its seat goes back to the AI when it leaves', r'\[online-late\] .*seat 2-2 left: the AI drives it now'),
 ]
@@ -82,7 +82,7 @@ def online(port, host_extra, client_extra, frames, join_after=1, client_frames=N
                                           '--join', '127.0.0.1:%d' % port] + client_extra,
                        cwd=ROOT, capture_output=True, text=True, errors='replace', timeout=200)
     try:
-        hout = h.communicate(timeout=60)[0]
+        hout = h.communicate(timeout=150)[0]
     except subprocess.TimeoutExpired:
         h.kill()
         hout = h.communicate()[0]

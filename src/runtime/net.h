@@ -9,7 +9,8 @@ int  net_join(const char* addr, int nlocal);        /* "host[:port]" or a join c
 void net_leave(void);                               /* tell the others, before quitting */
 int  net_active(void);                              /* a session is running */
 int  net_is_host(void);
-int  net_playing(void);                             /* the session's level has started */
+int  net_playing(void);
+int  net_catching_up(void);                         /* a joiner replaying the game so far */                             /* the session's level has started */
 void net_desync_test(int tick);                     /* a deliberate one-unit nudge: the check's test */
 int  net_selftest(void);
 

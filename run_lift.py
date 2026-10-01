@@ -93,6 +93,26 @@ PATCHES = [
     # (ecx/esi: the AI state asking).
     (0x0042ED09, 'ecx = eax + 0x818C;', 'ecx = hover_quarry(eax, ecx);'),
     (0x0040A810, 'eax = eax + 0x818Cu;', 'eax = hover_quarry(eax, esi);'),
+    # The radar's seen marks, per seat (mp.c): the renderer's marks and the
+    # one made outside a draw keep the game's bit and tell the host whose they
+    # are; the radar asks about the seat it draws for; the map eraser forgets
+    # player 1's.
+    (0x00402671, 'MEM8(edx + 0x24) = (uint8_t)(MEM8(edx + 0x24) | 8);',
+     'MEM8(edx + 0x24) = (uint8_t)(MEM8(edx + 0x24) | 8); hover_seen_mark(edx);'),
+    (0x004029ED, 'MEM8(eax + 0x24) = (uint8_t)(MEM8(eax + 0x24) | 8);',
+     'MEM8(eax + 0x24) = (uint8_t)(MEM8(eax + 0x24) | 8); hover_seen_mark(eax);'),
+    (0x00402F4B, 'MEM8(ecx + 0x24) = (uint8_t)(MEM8(ecx + 0x24) | 8);',
+     'MEM8(ecx + 0x24) = (uint8_t)(MEM8(ecx + 0x24) | 8); hover_seen_mark(ecx);'),
+    (0x0040E3F4, 'MEM8(eax + 0x24) = (uint8_t)(MEM8(eax + 0x24) | 8);',
+     'MEM8(eax + 0x24) = (uint8_t)(MEM8(eax + 0x24) | 8); hover_seen_mark(eax);'),
+    (0x00401C3A, '(uint32_t)(MEM8(eax + 0x24)) << 24', '(uint32_t)(hover_seen_byte(eax)) << 24'),
+    (0x00401D47, '(uint32_t)(MEM8(eax + 0x24)) << 24', '(uint32_t)(hover_seen_byte(eax)) << 24'),
+    (0x00404C05, '(uint32_t)(MEM8(eax + 0x24)) << 24', '(uint32_t)(hover_seen_byte(eax)) << 24'),
+    (0x00404EFE, '(uint32_t)(MEM8(eax + 0x24)) << 24', '(uint32_t)(hover_seen_byte(eax)) << 24'),
+    (0x004225D9, 'MEM8(eax + 0x24) = (uint8_t)(MEM8(eax + 0x24) & 0xF7u);',
+     'MEM8(eax + 0x24) = (uint8_t)(MEM8(eax + 0x24) & 0xF7u); hover_seen_forget(eax);'),
+    (0x004225F4, 'MEM8(eax + 0x24) = (uint8_t)(MEM8(eax + 0x24) & 0xF7u);',
+     'MEM8(eax + 0x24) = (uint8_t)(MEM8(eax + 0x24) & 0xF7u); hover_seen_forget(eax);'),
 ] + [
     # Pod pickup/Use/Think write their gauges into the view (0x00401140):
     # a seat's go to that seat's own block instead (esi is the pod, +0x88 its owner).
@@ -108,7 +128,9 @@ PATCH_DECLS = ('uint32_t hover_cam_obj(uint32_t doc);\nvoid hover_render_views(v
                'int mp_is_seat(uint32_t craft);\nuint32_t hover_pod_hud(uint32_t view, uint32_t owner);\n'
                'uint32_t hover_hud_full(void);\n'
                'void hover_sprite_visible(void);\nuint32_t hover_team_flags(uint32_t craft);\n'
-               'uint32_t hover_quarry(uint32_t doc, uint32_t state);\n')
+               'uint32_t hover_quarry(uint32_t doc, uint32_t state);\n'
+               'void hover_seen_mark(uint32_t obj);\nuint32_t hover_seen_byte(uint32_t obj);\n'
+               'void hover_seen_forget(uint32_t obj);\n')
 
 
 def apply_patches(out):
@@ -121,10 +143,16 @@ def apply_patches(out):
         changed = False
         for i, line in enumerate(lines):
             for va, old, new in PATCHES:
-                if ('/* 0x%08X:' % va) in line and old in line:
-                    lines[i] = line.replace(old, new, 1)
-                    hits[va] += 1
-                    changed = True
+                if ('/* 0x%08X:' % va) not in line:
+                    continue
+                # A flag-setting instruction is a comment line with its
+                # address, then the C that computes the flags: look there too.
+                for j in (i, i + 1):
+                    if j < len(lines) and old in lines[j]:
+                        lines[j] = lines[j].replace(old, new, 1)
+                        hits[va] += 1
+                        changed = True
+                        break
         if changed:
             open(path, 'w', encoding='utf-8', newline='\n').write('\n'.join(lines))
     missing = [va for va, n in hits.items() if not n]

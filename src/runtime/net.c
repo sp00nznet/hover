@@ -131,12 +131,15 @@ static volatile uint32_t g_cb, g_cb_user;
 static volatile int g_timer_on, g_armed;
 static HWND     g_view;                  /* where the callback posts WM_USER */
 static volatile int g_stopped;
+static volatile int g_catching;          /* a joiner replaying: nobody watches the picture */
+static DWORD    g_join_t0;
 static int      g_desync_test = -1;
 static char     g_status[128] = "offline";
 
 int net_active(void) { return g_active; }
 int net_is_host(void) { return g_is_host; }
 int net_playing(void) { return g_active && g_armed; }
+int net_catching_up(void) { return g_catching; }
 void net_desync_test(int tick) { g_desync_test = tick; }
 
 static void status(const char* fmt, ...) {
@@ -490,7 +493,8 @@ static DWORD WINAPI recv_thread(LPVOID unused) {
         case T_CLAIM:
             if (!g_is_host && n >= (int)sizeof(tickmsg_t) && g_claim == INT_MAX) {
                 g_claim = ((const tickmsg_t*)buf)->tick;
-                status("caught up: our seats are ours from tick %d", g_claim);
+                status("caught up: %d ticks replayed in %.1f s; our seats are ours from tick %d", g_tick,
+                       g_join_t0 ? (GetTickCount() - g_join_t0) / 1000.0 : 0.0, g_claim);
             }
             break;
         case T_BYE:
@@ -590,6 +594,8 @@ static DWORD WINAPI driver(LPVOID unused) {
             continue;
         }
         int catching_up = !g_is_host && g_late && tick < g_host_tick - DELAY - 2;
+        if (catching_up && !g_join_t0) g_join_t0 = GetTickCount();
+        g_catching = catching_up;
         if (!catching_up && (int)(GetTickCount() - due) < 0) { Sleep(1); continue; }
         if (MEM32(G_TICK_BUSY)) {                /* tick-1 not handled yet */
             Sleep(catching_up ? 0 : 1);

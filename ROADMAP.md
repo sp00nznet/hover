@@ -112,13 +112,12 @@ crafts are dynamic lists, a robot can be driven by a player, the renderer
 can draw any craft's view, and the simulation is deterministic per tick.
 
 1. **Split screen, 2-4 players**: in, with a dashboard, powerups and a
-   side for every player, and player 1 visible to the others. Next: radar
-   exploration per player (a bit per view on the walls' seen flags), a
-   cloaked seat hidden from the others, hunters chasing robot-side players,
-   pickup sounds for every local player.
+   side for every player, and player 1 visible to the others. Radar exploration
+   is per player and a cloaked seat is hidden from the others. Next: pickup
+   sounds for every local player.
 2. **Online, lockstep**: in, with open seats, drop-in/out and join codes.
-   Next: a relay (no port forwarding), faster catch-up for long sessions (a
-   snapshot of the world instead of replaying every tick), a lobby screen.
+   Catch-up replays about 1,700 ticks a second, so a snapshot of the world
+   is not needed yet. Next: a relay (no port forwarding), a lobby screen.
 3. **Modes**: co-op against the robots, versus, free-for-all (every seat
    its own side), capture limits and timers.
 4. **16 players**: the seats and the netcode are there. Bigger generated

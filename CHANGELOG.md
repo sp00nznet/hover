@@ -9,7 +9,16 @@ versions follow [SemVer](https://semver.org/).
 - The "not running a 256 color video driver" message at every start. Only
   the startup check is answered; rendering is unchanged.
 
+### Fixed
+- A rare fault with more than one player: the render passes walked the
+  game's thinker list while the game's thread freed nodes in it. They now
+  read a per-tick copy made on the game's thread.
+
 ### Added
+- Each player's radar shows only what that player has explored.
+- A cloaked craft is hidden from the other players' views.
+- A late joiner reports how long catching up took (a minute of play
+  replays in under a second).
 - Online: players join and leave while the game runs. Seats nobody holds
   are driven by their robot's AI (marked in the input record, decided by
   the host); a late joiner replays the session's inputs from tick 0 to

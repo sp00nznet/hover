@@ -145,14 +145,24 @@ table at 0x4609A0) are chosen by the window size.
   human's side instead of player 1 alone (0x0042ED09, 0x0040A810,
   `hover_quarry`). Online, the host's teams are part of the session.
 
-**Not yet:** the radar's explored walls are shared: the wall renderer sets
-bit 8 of each wall's `+0x24` byte (0x402671, 0x4029ED, 0x402F4B, 0x40E3F4;
-the radar tests it at 0x401C3A, 0x401D47, 0x404C05, 0x404EFE; a level clears
-it at 0x4225D9/0x4225F4), so every pass explores for everyone. A cloaked
-seat is not hidden from the others' views; seats get no pickup sounds; a
-seat on the robots' side is not chased by hunters; player 1 wears the
-robots' sprite art (there is no other). A change of player count takes effect
-from the next level load.
+- **Radar, per player.** The game keeps one "seen" bit per wall and sprite
+  (bit 8 of `+0x24`: set by the renderer at 0x402671, 0x4029ED, 0x402F4B and
+  by 0x40E3F4, tested by the radar at 0x401C3A, 0x401D47, 0x404C05,
+  0x404EFE, cleared by the map eraser at 0x4225D9/0x4225F4). The host keeps
+  a seat mask per address beside it (`hover_seen_*`): a mark made in a view's
+  pass is that seat's, one made outside a draw is everyone's, and each radar
+  shows what its own player has seen. Render-side only, so it never desyncs.
+- **Cloak.** A cloaked craft is not drawn in anyone else's view
+  (`hover_sprite_visible`); the original's cloak only hid the human from
+  the robots' line of sight.
+- **Render thread.** The game's thread adds and frees thinker nodes as pod
+  effects come and go, so the render passes never walk that list: every tick,
+  on the game's thread (a wrapper on CHumanPlayer::Think, 0x409180), the host
+  copies each craft, its sprite and its seat, and the passes read only that.
+
+**Not yet:** seats get no pickup sounds; player 1 wears the robots' sprite
+art (there is no other). A change of player count takes effect from the next
+level load.
 
 Checked headless: 2 and 4 players on a pinned seed, each view distinct and
 following its own craft (docs: the conformance run has a 2-player run), and
@@ -229,8 +239,8 @@ and used by a seat, in sync through tick 2,200.
 - Addresses: direct only (a LAN, Tailscale, or UDP 7795 forwarded to the
   host); the join code is only a readable address. A relay would remove the
   port forwarding.
-- A joiner replays the whole session, so a long game takes a while to join
-  (it replays at the speed the renderer allows).
-- Everything the split screen lacks (shared radar exploration, cloak,
-  sounds) applies online too.
+- A joiner replays the whole session. Measured: 1,209 ticks (a minute of
+  play) in 0.7 s, so even an hour-long game is about 45 s to join; the log
+  line `caught up: N ticks replayed in X s` reports it.
+- Seats get no pickup sounds, here or in split screen.
 - Every PC needs the same build and the same game files.

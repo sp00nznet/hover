@@ -119,6 +119,60 @@ static uint32_t seat_craft(int s) {
     return i >= 0 && i < n ? robots[i] : 0;
 }
 
+/* The render thread must not walk the thinkers list: the game's thread adds
+ * and frees nodes in it as pod effects start and end, and a walk from the
+ * other thread read freed memory (a rare fault, single player included).
+ * So at the start of every tick, on the game's thread (CHumanPlayer::Think,
+ * the first in the list, is wrapped in mp_lookup), the host copies what the
+ * render passes need: every craft, its sprite, its seat. Render-thread code
+ * reads only this. */
+typedef struct { uint32_t craft, sprite; int seat; } snap_t;
+static snap_t g_snap[64];
+static int g_nsnap;
+static CRITICAL_SECTION g_snap_lock;
+
+static void snapshot(void) {
+    snap_t t[64];
+    int n = 0;
+    uint32_t doc = MEM32(G_DOC);
+    for (uint32_t node = doc ? MEM32(doc + DOC_THINKERS) : 0; node && n < 64; node = MEM32(node)) {
+        uint32_t o = MEM32(node + 8);
+        if (MEM32(o) != VT_ROBOT && MEM32(o) != VT_HUMAN) continue;
+        t[n].craft = o;
+        t[n].sprite = MEM32(o + 0x78);
+        t[n].seat = MEM32(o) == VT_HUMAN ? 0 : -1;
+        n++;
+    }
+    for (int s = 1; s < g_seats; s++) {
+        uint32_t c = seat_craft(s);
+        for (int i = 0; i < n; i++) if (t[i].craft == c) t[i].seat = s;
+    }
+    EnterCriticalSection(&g_snap_lock);
+    memcpy(g_snap, t, sizeof(snap_t) * n);
+    g_nsnap = n;
+    LeaveCriticalSection(&g_snap_lock);
+}
+
+/* The render thread's seat_craft. */
+static uint32_t snap_seat_craft(int seat) {
+    uint32_t c = 0;
+    EnterCriticalSection(&g_snap_lock);
+    for (int i = 0; i < g_nsnap && !c; i++) if (g_snap[i].seat == seat && seat > 0) c = g_snap[i].craft;
+    LeaveCriticalSection(&g_snap_lock);
+    return c;
+}
+
+static int snap_copy(snap_t* out) {
+    EnterCriticalSection(&g_snap_lock);
+    int n = g_nsnap;
+    memcpy(out, g_snap, sizeof(snap_t) * n);
+    LeaveCriticalSection(&g_snap_lock);
+    return n;
+}
+
+void sub_00409180(void);   /* CHumanPlayer::Think */
+static void human_think(void) { snapshot(); sub_00409180(); }
+
 /* The seat whose craft this is (1..), or 0: AI robots and the human. */
 int mp_is_seat(uint32_t craft) {
     for (int s = 1; s < g_seats && craft; s++)
@@ -337,6 +391,7 @@ static void human_sprite(void) {
 recomp_func_t mp_lookup(uint32_t va) {
     switch (va) {
     case 0x00409300u: return g_seats > 1 ? seat_think : NULL;
+    case 0x00409180u: return g_seats > 1 ? human_think : NULL;
     case 0x004089D0u: return human_frame;
     case 0x004089F0u: return human_sprite;
     case 0x00414470u: return flag_can_take;
@@ -368,7 +423,7 @@ uint32_t mp_world_hash(void) {
  * document, and the craft returned is the one whose eyes this pass uses. */
 uint32_t hover_cam_obj(uint32_t doc) {
     int seat = g_view < g_nlocal ? g_local[g_view] : 0;
-    uint32_t craft = seat ? seat_craft(seat) : 0;
+    uint32_t craft = seat ? snap_seat_craft(seat) : 0;
     return craft ? craft : doc + DOC_HUMAN;
 }
 
@@ -400,9 +455,9 @@ static void hud_mark(uint32_t view) {
 }
 
 /* Put `robot`'s numbers in the view; `was` keeps the game's for hud_put_back. */
-static void hud_swap_in(uint32_t view, uint32_t robot, uint32_t* was, uint32_t* mine) {
+static void hud_swap_in(uint32_t view, uint32_t robot, int seat, uint32_t* was, uint32_t* mine) {
     int32_t flags = (int32_t)MEM32(robot + 0xC0), most = (int32_t)MEM32(view + 0x46C);
-    uint32_t block = hover_pod_hud(view, robot);
+    uint32_t block = (uint32_t)(uintptr_t)g_seat_hud[seat];   /* the pass knows its seat: no list walk here */
     for (int i = 0; i < HUD_VALS; i++) {
         was[i] = MEM32(view + hud_val[i]);
         mine[i] = i >= 5 ? MEM32(block + hud_val[i]) : 0;   /* the gauges: the seat's own */
@@ -433,9 +488,110 @@ static void hud_put_back(uint32_t view, const uint32_t* was, const uint32_t* min
  * renderer's visibility test, thiscall, one argument, ret 4). */
 static volatile uint32_t g_own_sprite;
 
+/* A craft's cloak: +0x134 is its cloak pod while one is held, active while
+ * the pod's +0x28 is set (the robots' line-of-sight test, 0x0042ED2F, reads
+ * the same). */
+static int cloaked(uint32_t craft) {
+    uint32_t c = MEM32(craft + 0x134);
+    return c && MEM32(c + 0x28);
+}
+
 void hover_sprite_visible(void) {
-    if (g_own_sprite && MEM32(g_esp + 4) == g_own_sprite) { g_eax = 0; g_esp += 8; return; }
+    uint32_t sprite = MEM32(g_esp + 4);
+    int hide = g_own_sprite && sprite == g_own_sprite;
+    /* A cloaked craft is not drawn in anyone else's view (the original's
+     * cloak only hid the human from the robots: nobody else ever saw it). */
+    if (!hide && g_seats > 1) {
+        snap_t crafts[64];
+        int n = snap_copy(crafts);
+        for (int k = 0; k < n && !hide; k++)
+            if (crafts[k].sprite == sprite) hide = cloaked(crafts[k].craft);
+    }
+    if (hide) { g_eax = 0; g_esp += 8; return; }
     sub_00405B90();
+}
+
+/* ------------------------------------------------------------ the radar, per player */
+
+/* What the radar shows is what has been seen: bit 0x08 of byte +0x24 of a
+ * wall, and of an object's sprite, set by the renderer as it draws them
+ * (0x00402671, 0x004029ED, 0x00402F4B) and by 0x0040E3F4 outside a draw, and
+ * tested by the radar (0x00401C3A, 0x00401D47, 0x00404C05, 0x00404EFE). One
+ * bit for everyone: with several players, every pass explored for all of
+ * them. So the host keeps which seats have seen what, by address: a mark
+ * made in a render pass is that pass's seat's, one made outside a pass is
+ * everyone's, and the radar asks about the seat it is drawn for. The game's
+ * own bit is still set and cleared as before; with one seat it is all
+ * there is. Render-side only: no tick reads it, so it never desyncs. */
+#define SEEN_SLOTS 16384                 /* a maze has ~700 walls, and the objects */
+static struct { uint32_t key; uint16_t seats; } g_seen[SEEN_SLOTS];
+static CRITICAL_SECTION g_seen_lock;
+static volatile LONG g_seen_ready;
+
+static void seen_init(void) {
+    if (InterlockedCompareExchange(&g_seen_ready, 1, 0) == 0) InitializeCriticalSection(&g_seen_lock);
+}
+
+/* Callers hold g_seen_lock. */
+static uint16_t* seen_at(uint32_t key, int add) {
+    uint32_t i = (key >> 2) * 2654435761u % SEEN_SLOTS;
+    for (int n = 0; n < SEEN_SLOTS; n++, i = (i + 1) % SEEN_SLOTS) {
+        if (g_seen[i].key == key) return &g_seen[i].seats;
+        if (!g_seen[i].key) {
+            if (!add) return NULL;
+            g_seen[i].key = key;
+            return &g_seen[i].seats;
+        }
+    }
+    return NULL;                         /* full: the radar shows less, nothing breaks */
+}
+
+static uint16_t pass_seats(void) {
+    if (mp_in_views()) return (uint16_t)(1u << (g_view < g_nlocal ? g_local[g_view] : 0));
+    return 0xFFFF;                       /* outside a draw: a reveal for everyone */
+}
+
+void hover_seen_mark(uint32_t obj) {
+    if (g_seats < 2) return;
+    seen_init();
+    EnterCriticalSection(&g_seen_lock);
+    uint16_t* m = seen_at(obj, 1);
+    if (m) *m |= pass_seats();
+    LeaveCriticalSection(&g_seen_lock);
+}
+
+uint32_t hover_seen_byte(uint32_t obj) {
+    uint8_t b = MEM8(obj + 0x24);
+    if (g_seats < 2 || !mp_in_views()) return b;
+    seen_init();
+    EnterCriticalSection(&g_seen_lock);
+    uint16_t* m = seen_at(obj, 0);
+    int seen = m && (*m & pass_seats());
+    LeaveCriticalSection(&g_seen_lock);
+    return (b & ~8u) | (seen ? 8u : 0u);
+}
+
+/* The map eraser (0x004225D9/0x004225F4): player 1's map; seats' pickups
+ * never reach it (0x00422589). */
+void hover_seen_forget(uint32_t obj) {
+    if (g_seats < 2) return;
+    seen_init();
+    EnterCriticalSection(&g_seen_lock);
+    uint16_t* m = seen_at(obj, 0);
+    if (m) *m &= (uint16_t)~1u;
+    LeaveCriticalSection(&g_seen_lock);
+}
+
+/* A level is loading (levels.c): its walls and objects are new, and an old
+ * address may come back as one of them. */
+void mp_level_reset(void) {
+    EnterCriticalSection(&g_snap_lock);
+    g_nsnap = 0;                         /* the old crafts are going */
+    LeaveCriticalSection(&g_snap_lock);
+    seen_init();
+    EnterCriticalSection(&g_seen_lock);
+    memset(g_seen, 0, sizeof g_seen);
+    LeaveCriticalSection(&g_seen_lock);
 }
 
 /* A craft's sprite frame is picked on the tick, facing the human
@@ -443,10 +599,12 @@ void hover_sprite_visible(void) {
  * way: the angle from craft to camera against the craft's heading, 32
  * frames and their mirror images. */
 static void face_sprites(uint32_t cam) {
-    uint32_t doc = MEM32(G_DOC), sp = g_esp, eax = g_eax, ecx = g_ecx, edx = g_edx;
-    for (uint32_t node = doc ? MEM32(doc + DOC_THINKERS) : 0; node; node = MEM32(node)) {
-        uint32_t o = MEM32(node + 8), spr;
-        if ((MEM32(o) != VT_ROBOT && MEM32(o) != VT_HUMAN) || !(spr = MEM32(o + 0x78)) || o == cam) continue;
+    uint32_t sp = g_esp, eax = g_eax, ecx = g_ecx, edx = g_edx;
+    snap_t crafts[64];
+    int n = snap_copy(crafts);
+    for (int k = 0; k < n; k++) {
+        uint32_t o = crafts[k].craft, spr = crafts[k].sprite;
+        if (!spr || o == cam) continue;
         uint32_t out = sp - 16;
         g_esp = sp - 32;
         MEM32(g_esp) = RECOMP_RETADDR;
@@ -469,12 +627,12 @@ void hover_render_views(void) {
     g_views_thread = GetCurrentThreadId();
     g_in_views = 1;
     for (int v = n - 1; v >= 0; v--) {
-        uint32_t robot = g_local[v] ? seat_craft(g_local[v]) : 0, was[HUD_VALS], mine[HUD_VALS];
+        uint32_t robot = g_local[v] ? snap_seat_craft(g_local[v]) : 0, was[HUD_VALS], mine[HUD_VALS];
         g_eax = eax; g_ecx = ecx; g_edx = edx; g_ebx = ebx;
         g_esp = esp; g_ebp = ebp; g_esi = esi; g_edi = edi;
         g_view = v;
         if (n > 1 || robot) hud_mark(ecx);
-        if (robot) hud_swap_in(ecx, robot, was, mine);
+        if (robot) hud_swap_in(ecx, robot, g_local[v], was, mine);
         if (g_seats > 1) {
             uint32_t cam = hover_cam_obj(MEM32(G_DOC));
             g_own_sprite = MEM32(cam + 0x78);
@@ -538,6 +696,7 @@ void mp_init(const char* ini, int cli_players, int (*key_down)(int vk)) {
     int local[MP_MAX_LOCAL];
     strncpy(g_ini, ini, sizeof g_ini - 1);
     g_key = key_down;
+    InitializeCriticalSection(&g_snap_lock);
     if (!GetPrivateProfileIntA("mp", "players", 0, g_ini)) WritePrivateProfileStringA("mp", "players", "1", g_ini);
     int n = cli_players ? cli_players : GetPrivateProfileIntA("mp", "players", 1, g_ini);
     n = n < 1 ? 1 : n > MP_MAX_LOCAL ? MP_MAX_LOCAL : n;

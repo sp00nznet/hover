@@ -24,6 +24,7 @@
 
 #include "levels.h"
 #include "net.h"
+#include "mp.h"
 #include "recomp_types.h"
 
 #define G_LEVEL      0x0046049Cu   /* current level, 0-based */
@@ -109,6 +110,7 @@ uint32_t levels_seed(void) {
     int level = (int)MEM32(G_LEVEL);
     g_demo = level == 20;                      /* small.maz, the attract loop: not a level to keep */
     net_level_loading(g_demo);
+    mp_level_reset();                          /* the radar's seen marks start over */
     if (level >= 0 && level < 20) g_level = level;
     if (g_restore_start) {                     /* the saved level is loading: Start At back */
         MEM32(G_START_AT) = g_start_was;

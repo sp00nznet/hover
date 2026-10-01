@@ -31,6 +31,10 @@ void     hover_render_views(void);
 int      mp_is_seat(uint32_t craft);                       /* seat 1.. whose craft this is, or 0 */
 uint32_t hover_pod_hud(uint32_t view, uint32_t owner);     /* pod gauges: the view, or a seat's block */
 void     hover_sprite_visible(void);
+void     hover_seen_mark(uint32_t obj);           /* the radar's seen marks, per seat */
+uint32_t hover_seen_byte(uint32_t obj);
+void     hover_seen_forget(uint32_t obj);
+void     mp_level_reset(void);                     /* levels.c: a level is loading */
 uint32_t hover_team_flags(uint32_t craft);
 uint32_t hover_quarry(uint32_t doc, uint32_t state);
 void     mp_get_teams(char* out);              /* MP_MAX_SEATS letters and a NUL: the online session's */
