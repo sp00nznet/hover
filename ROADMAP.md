@@ -4,9 +4,10 @@ The port plays. What follows turns it into the best way to play Hover!:
 better pictures, pads, sound, new levels, and other people. Each milestone
 lands with its own conformance check and a line in `docs/`.
 
-Where the ideas come from: gunman's D3D11 presenter, SimCity 2000's frontend
-(ImGui, ini, palette emulation, shader chain), and hlmapgen
-(`F:\projects\tools\tilde\dist\hlmapgen`, seeded grid layouts).
+Where the ideas come from: [gunman](https://github.com/sp00nznet/gunman)'s
+D3D11 presenter, [SimCity 2000](https://github.com/sp00nznet/simcity2000)'s
+frontend (ImGui, ini, palette emulation, shader chain), and
+[hlmapgen](https://github.com/sp00nznet/hlmapgen) (seeded grid layouts).
 
 ## 0. Housekeeping
 
@@ -113,11 +114,12 @@ can draw any craft's view, and the simulation is deterministic per tick.
 
 1. **Split screen, 2-4 players**: in, with a dashboard, powerups and a
    side for every player, and player 1 visible to the others. Radar exploration
-   is per player and a cloaked seat is hidden from the others. Next: pickup
-   sounds for every local player.
+   is per player, a cloaked seat is hidden from the others, and every local
+   player hears their own pickups and hits.
 2. **Online, lockstep**: in, with open seats, drop-in/out and join codes.
    Catch-up replays about 1,700 ticks a second, so a snapshot of the world
-   is not needed yet. Next: a relay (no port forwarding), a lobby screen.
+   is not needed yet. Next: carrying a session through a game over (today
+   "play again?" ends it), a relay (no port forwarding), a lobby screen.
 3. **Modes**: co-op against the robots, versus, free-for-all (every seat
    its own side), capture limits and timers.
 4. **16 players**: the seats and the netcode are there. Bigger generated

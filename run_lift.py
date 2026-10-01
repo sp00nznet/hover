@@ -113,6 +113,23 @@ PATCHES = [
      'MEM8(eax + 0x24) = (uint8_t)(MEM8(eax + 0x24) & 0xF7u); hover_seen_forget(eax);'),
     (0x004225F4, 'MEM8(eax + 0x24) = (uint8_t)(MEM8(eax + 0x24) & 0xF7u);',
      'MEM8(eax + 0x24) = (uint8_t)(MEM8(eax + 0x24) & 0xF7u); hover_seen_forget(eax);'),
+    # Sounds (mp.c, hover_heard): each gate on the craft's +0x1F8 (only the
+    # human's is set) asks the host whether this PC plays that craft's sounds.
+    (0x0040ABBE, 'if (CMP_EQ(_flag_a, _flag_b)) goto L_0040ABDC;', 'if (!hover_heard(esi)) goto L_0040ABDC;'),
+    (0x0040AD48, 'if (CMP_EQ(_flag_a, _flag_b)) goto L_0040AD9C;', 'if (!hover_heard(esi)) goto L_0040AD9C;'),
+    (0x0040AD70, 'if (CMP_EQ(_flag_a, _flag_b)) goto L_0040AD8A;', 'if (!hover_heard(esi)) goto L_0040AD8A;'),
+    (0x0040AE03, 'if (CMP_EQ(_flag_a, _flag_b)) goto L_0040AE1D;', 'if (!hover_heard(esi)) goto L_0040AE1D;'),
+    (0x0040D776, 'if (CMP_EQ(_flag_a, _flag_b)) goto L_0040D790;', 'if (!hover_heard(esi)) goto L_0040D790;'),
+    (0x0041824E, 'if (CMP_EQ(_flag_a, _flag_b)) goto L_00418268;', 'if (!hover_heard(edi)) goto L_00418268;'),
+    (0x0041B475, 'if (CMP_EQ(_flag_a, _flag_b)) goto L_0041B4E2;', 'if (!hover_heard(edi)) goto L_0041B4E2;'),
+    (0x004210CC, 'if (CMP_EQ(_flag_a, _flag_b)) goto L_004210E6;', 'if (!hover_heard(edi)) goto L_004210E6;'),
+    (0x004227FD, 'if (CMP_EQ(_flag_a, _flag_b)) goto L_00422817;', 'if (!hover_heard(eax)) goto L_00422817;'),
+    (0x0042A7C9, 'if (CMP_EQ(_flag_a, _flag_b)) goto L_0042A7E3;', 'if (!hover_heard(eax)) goto L_0042A7E3;'),
+    (0x0042A8D1, 'if (CMP_EQ(_flag_a, _flag_b)) goto L_0042A8EB;', 'if (!hover_heard(edi)) goto L_0042A8EB;'),
+    (0x0042AB29, 'if (CMP_EQ(_flag_a, _flag_b)) goto L_0042AB43;', 'if (!hover_heard(eax)) goto L_0042AB43;'),
+    (0x0042AC31, 'if (CMP_EQ(_flag_a, _flag_b)) goto L_0042AC4B;', 'if (!hover_heard(edi)) goto L_0042AC4B;'),
+    (0x0042B26B, 'if (CMP_EQ(_flag_a, _flag_b)) goto L_0042B285;', 'if (!hover_heard(eax)) goto L_0042B285;'),
+    (0x0042B379, 'if (CMP_EQ(_flag_a, _flag_b)) goto L_0042B393;', 'if (!hover_heard(edi)) goto L_0042B393;'),
 ] + [
     # Pod pickup/Use/Think write their gauges into the view (0x00401140):
     # a seat's go to that seat's own block instead (esi is the pod, +0x88 its owner).
@@ -130,7 +147,7 @@ PATCH_DECLS = ('uint32_t hover_cam_obj(uint32_t doc);\nvoid hover_render_views(v
                'void hover_sprite_visible(void);\nuint32_t hover_team_flags(uint32_t craft);\n'
                'uint32_t hover_quarry(uint32_t doc, uint32_t state);\n'
                'void hover_seen_mark(uint32_t obj);\nuint32_t hover_seen_byte(uint32_t obj);\n'
-               'void hover_seen_forget(uint32_t obj);\n')
+               'void hover_seen_forget(uint32_t obj);\nuint32_t hover_heard(uint32_t craft);\n')
 
 
 def apply_patches(out):

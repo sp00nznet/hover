@@ -43,6 +43,52 @@ throughout:
 | ![the attract screen at startup](docs/img/title.png) | ![level 1, a sandstone wall](docs/img/maze-wall.png) |
 | ![level 1, the banner corridor](docs/img/maze-banner.png) | ![level 1, the mural](docs/img/maze-mural.png) |
 
+## Added features
+
+Things the 1995 game never had. All of it is host code beside the
+recompiled game (`src/runtime/`) plus patches applied while lifting
+(`run_lift.py`); none of it changes how a single-player level plays.
+
+**Split screen, 2 to 4 players on one PC.** Each player gets their own view
+and dashboard: radar (showing only what that player has explored), speed,
+pods and gauges, score and flags. Each player picks up and uses their own
+jump, wall and cloak pods, hears their own pickups and hits, and plays on a
+side (`--teams`): co-op with player 1, or on the robots' side. A cloaked
+player is hidden from the other views. Player 2 drives with I/J/K/L and uses
+pods with U/O/P, or uses a pad.
+
+![Two players on one PC, each with their own view, radar and dashboard](docs/img/mp-split.gif)
+
+**Online play.** Lockstep over UDP for up to 16 seats, with 1 to 4 per PC.
+Robots drive every empty seat. Players join and leave while the game runs:
+a joiner replays the session (a minute of play takes under a second), then
+takes its seat. Games are shared with a join code (`HOVER-XXXXX-XXXXX`), and
+every 20 ticks the PCs compare a hash of the world to catch a desync.
+Connections are direct (LAN, Tailscale, or a forwarded port).
+
+![Online over localhost: the host's view (left) sees the client's hovercraft; the client's view (right)](docs/img/mp-online.gif)
+
+**The presenter.** The game still draws with GDI. The port shows the result
+in a resizable Direct3D 11 window: sharp, smooth, nearest or integer
+scaling, borderless fullscreen (F11 or Alt+Enter), a CRT effect with
+curvature, 16-bit or 8-bit retro dithering, and vivid colour. The "256
+colour" warning at every start is gone.
+
+**Level seeds.** Every level comes from a seed. You can pin a seed, save a
+level you liked, and share it as a code like `L3-1789123456`. The same seed
+gives the same level, pixel for pixel.
+
+**Xbox controllers.** XInput pads press the game's own keys. Layout,
+deadzone and controller slot are set in `hover.ini` or the **Recomp** menu.
+
+**Headless and recording.** `--headless --record out.mp4 --key ...` plays a
+scripted run without showing a window. The GIFs above were made this way.
+
+Details: [docs/multiplayer.md](docs/multiplayer.md),
+[docs/presenter.md](docs/presenter.md), [docs/levels.md](docs/levels.md),
+[docs/controller.md](docs/controller.md), [docs/host.md](docs/host.md).
+What is next: [ROADMAP.md](ROADMAP.md).
+
 ## What is not in this repo
 
 Nothing from the game: no executable, no data, no disc image, and **no

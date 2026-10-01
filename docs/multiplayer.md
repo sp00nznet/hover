@@ -159,8 +159,13 @@ table at 0x4609A0) are chosen by the window size.
   effects come and go, so the render passes never walk that list: every tick,
   on the game's thread (a wrapper on CHumanPlayer::Think, 0x409180), the host
   copies each craft, its sprite and its seat, and the passes read only that.
+- **Sounds.** A craft's sounds (pickups, pod hits, wall hits, skids, speed
+  and invincibility) are gated on its `+0x1F8`, which only the human's has
+  set. The 15 gates (run_lift.py) ask `hover_heard` instead: every seat on
+  this PC is heard, the human only if it is one of them. Online, each PC
+  hears its own players.
 
-**Not yet:** seats get no pickup sounds; player 1 wears the robots' sprite
+**Not yet:** player 1 wears the robots' sprite
 art (there is no other). A change of player count takes effect from the next
 level load.
 
@@ -242,5 +247,8 @@ and used by a seat, in sync through tick 2,200.
 - A joiner replays the whole session. Measured: 1,209 ticks (a minute of
   play) in 0.7 s, so even an hour-long game is about 45 s to join; the log
   line `caught up: N ticks replayed in X s` reports it.
-- Seats get no pickup sounds, here or in split screen.
+- A game over ends the session. The game's own "play again?" box comes up on
+  every PC, and the session does not carry on into the next game: start a
+  new one from the Multiplayer menu.
+- Sound is not positional: each PC hears its own players' sounds at full volume.
 - Every PC needs the same build and the same game files.

@@ -27,7 +27,7 @@
  * instead of a device, so every PC runs the same world.
  *
  * Players in robot seats play for the robots' team (the flag rules go by
- * class). Powerups and sounds are still seat 0's: see the roadmap.
+ * class), with their own powerups, radar and sounds.
  */
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -177,6 +177,20 @@ static void human_think(void) { snapshot(); sub_00409180(); }
 int mp_is_seat(uint32_t craft) {
     for (int s = 1; s < g_seats && craft; s++)
         if (seat_craft(s) == craft) return s;
+    return 0;
+}
+
+/* Sounds: the game plays a craft's sounds (pickups, wall hits, skids,
+ * speed and invincibility) only when its +0x1F8 is set, which only the
+ * human's is (the gates are patched in run_lift.py). With seats: the crafts
+ * of the seats on this PC, the human included only if it is one of them, so
+ * online every PC hears its own players. Sound is a side effect: no tick
+ * reads it. */
+uint32_t hover_heard(uint32_t craft) {
+    if (g_seats < 2) return MEM32(craft + 0x1F8);
+    int seat = MEM32(craft) == VT_HUMAN ? 0 : mp_is_seat(craft);
+    if (!seat && MEM32(craft) != VT_HUMAN) return 0;
+    for (int i = 0; i < g_nlocal; i++) if (g_local[i] == seat) return 1;
     return 0;
 }
 

@@ -76,6 +76,7 @@
 #define FAKE_TIMER 0x7E57u
 #define MAX_PEERS 15
 #define IN_AI 0x80                       /* the record's mark: this seat's robot drives itself */
+#define TICK_WINDOW 4096                 /* a packet's ticks are at most this far past ours (~3.4 min) */
 
 enum { T_HELLO = 1, T_WELCOME, T_INPUT, T_HASH, T_ACK, T_READY, T_CLAIM, T_BYE, T_LOGREQ, T_FULL };
 
@@ -159,9 +160,10 @@ static void stop(const char* why) {
 
 /* ------------------------------------------------------------ the record */
 
-/* Callers hold g_lock. */
+/* Callers hold g_lock. Ticks come off the wire, so one far past ours is
+ * refused before it can size the log. */
 static rec_t* slot(int32_t tick, int seat) {
-    if (tick < 0 || seat < 0 || seat >= MP_MAX_SEATS) return NULL;
+    if (tick < 0 || tick > g_tick + TICK_WINDOW || seat < 0 || seat >= MP_MAX_SEATS) return NULL;
     if (tick >= g_log_ticks) {
         int32_t n = g_log_ticks ? g_log_ticks : 4096;
         while (n <= tick) n *= 2;
@@ -416,11 +418,16 @@ static DWORD WINAPI recv_thread(LPVOID unused) {
         if (n < (int)sizeof(hdr_t)) { if (n == SOCKET_ERROR) Sleep(10); continue; }
         const hdr_t* h = (const hdr_t*)buf;
         if (h->magic != MAGIC) continue;
+        /* A client listens to its host only; anyone else could end or steer
+         * its game. The host hears HELLO from anyone, the rest from peers. */
+        if (!g_is_host && (from.sin_addr.s_addr != g_host_addr.sin_addr.s_addr ||
+                           from.sin_port != g_host_addr.sin_port)) continue;
         if (h->version != VERSION) {
             if (h->type == T_HELLO) fprintf(stderr, "[net] a PC with another version tried to join\n");
             continue;
         }
         int p = g_is_host ? peer_of(&from) : -1;
+        if (g_is_host && p < 0 && h->type != T_HELLO) continue;
         if (p >= 0) g_peers[p].seen = GetTickCount();
         if (!g_is_host) g_host_seen = GetTickCount();
 
@@ -431,6 +438,8 @@ static DWORD WINAPI recv_thread(LPVOID unused) {
         case T_WELCOME:
             if (!g_is_host && !g_active && n >= (int)sizeof(welcome_t)) {
                 const welcome_t* w = (const welcome_t*)buf;
+                if (w->total > MP_MAX_SEATS || w->nlocal < 1 || w->nlocal > g_nlocal ||
+                    w->seat_base + w->nlocal > w->total || w->occupied > w->total || w->level > 19) break;
                 g_seat_base = w->seat_base;
                 g_nlocal = w->nlocal;
                 g_total = w->total;
@@ -869,10 +878,12 @@ void net_init(const char* ini, HWND frame, int headless) {
     g_port = GetPrivateProfileIntA("net", "port", 7795, g_ini);
 }
 
-/* --net-selftest: the join codes. */
+/* --net-selftest: the join codes, and the log's bound on wire ticks. */
 int net_selftest(void) {
     char code[32], host[64];
     int port = 0, fails = 0;
+    if (slot(INT_MAX - 5, 0) || slot(g_tick + TICK_WINDOW + 1, 0) || g_log_ticks) fails++;
+    if (!slot(g_tick + 10, 0)) fails++;
     struct in_addr a;
     inet_pton(AF_INET, "100.101.102.103", &a);
     encode(a.s_addr, 7795, code, sizeof code);

@@ -29,6 +29,7 @@ int           mp_command(UINT id);
 uint32_t hover_cam_obj(uint32_t doc);
 void     hover_render_views(void);
 int      mp_is_seat(uint32_t craft);                       /* seat 1.. whose craft this is, or 0 */
+uint32_t hover_heard(uint32_t craft);                      /* are this craft's sounds played here? */
 uint32_t hover_pod_hud(uint32_t view, uint32_t owner);     /* pod gauges: the view, or a seat's block */
 void     hover_sprite_visible(void);
 void     hover_seen_mark(uint32_t obj);           /* the radar's seen marks, per seat */

@@ -104,14 +104,17 @@ def boot(seconds):
                        capture_output=True, text=True, errors='replace', timeout=150)
     out += '\n[split] ' + (t.stdout + t.stderr).replace('\n', ' ') + '\n'
     # Online: lockstep over localhost, both driving; then a deliberate desync.
-    hout, cout = online(7795, ['--clients', '1', '--key', 'UP@12000+6000'],
+    hout, cout = online(7795, ['--clients', '1', '--seed', '12345', '--key', 'UP@12000+6000'],
                         ['--key', 'UP@12000+6000', '--key', 'RIGHT@13000+1500'], 520)
     out += '\n[online-host] ' + hout + '\n[online-client] ' + cout + '\n'
-    hout, cout = online(7796, ['--clients', '1'], ['--net-desync-test', '100'], 300)
+    hout, cout = online(7796, ['--clients', '1', '--seed', '12345'], ['--net-desync-test', '100'], 300)
     out += '\n[online-desync] ' + hout + ' ' + cout + '\n'
     # Drop in, drop out: an open 4-seat game; a client joins 15 s in, replays
     # the game so far, takes its seat, plays, and quits (saying goodbye).
-    hout, cout = online(7797, ['--seats', '4', '--key', 'UP@9000+60000'], ['--key', 'UP@25000+20000'],
+    # Pinned seed: with four seats the robots can take every flag inside a
+    # minute on some levels, and a game over ends the session before the
+    # client leaves. 31337 lasts the whole run.
+    hout, cout = online(7797, ['--seats', '4', '--seed', '31337', '--key', 'UP@9000+60000'], ['--key', 'UP@25000+20000'],
                         1900, join_after=15, client_frames=900)
     out += '\n[online-late] ' + cout + ' ' + hout + '\n'
     for test in ('--pad-selftest', '--levels-selftest'):
