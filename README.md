@@ -235,5 +235,5 @@ does and why is [docs/host.md](docs/host.md).
 
 ## License
 
-MIT, for the code in this repository ([LICENSE](LICENSE)). Hover! itself is
+MIT, for the code in this repository ([LICENSE](LICENSE); what it does not cover is in [NOTICE](NOTICE)). Hover! itself is
 © 1995 Microsoft Corporation; none of it is here.
