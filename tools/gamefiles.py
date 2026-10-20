@@ -133,8 +133,14 @@ def main():
         else:
             sys.exit('no drive holds Hover!; pass a drive, folder, zip or disc image')
     elif os.path.isdir(src):
-        if not from_folder(src):
-            sys.exit('%s does not hold HOVER.EXE with DASHRES.DLL and MAZES\\ beside it' % src)
+        # the folder itself, else a zip or disc image of it in there (what
+        # recomp-launcher passes when you pick the folder holding your download)
+        images = [os.path.join(src, f) for f in sorted(os.listdir(src))
+                  if f.lower().startswith('hover') and f.lower().endswith(('.zip', '.iso', '.cue', '.bin'))]
+        if not (from_folder(src) or any(from_zip(zipfile.ZipFile(p), p) if zipfile.is_zipfile(p) else from_image(p)
+                                        for p in images)):
+            sys.exit('%s holds neither HOVER.EXE (with DASHRES.DLL and MAZES\\ beside it) '
+                     'nor a hover*.zip/.iso of it' % src)
     elif zipfile.is_zipfile(src):
         with zipfile.ZipFile(src) as z:
             if not from_zip(z, src):

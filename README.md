@@ -102,7 +102,21 @@ You need **your own copy of Hover!**: the Windows 95 CD (it is in
 `FUNSTUFF\HOVER`), the Hover! CD, an ISO or BIN/CUE of either, or a zip of
 the game folder. Nothing is downloaded for you.
 
-### Quick start
+### Quick start: the installer
+
+Download **Hover-Recomp-Installer** for Windows and run it. For now it is the
+artifact of the latest [installer run](https://github.com/sp00nznet/hover/actions/workflows/installer.yml)
+(sign in to GitHub, open the run, *Artifacts*); a tagged release comes next.
+It's unsigned, so SmartScreen asks: **More info**, **Run anyway**.
+
+Point it at the folder holding your copy (the game's folder, the CD's drive,
+or the folder your `hover*.zip`/`.iso` is in) and press build. It downloads
+this repository and pcrecomp into `%USERPROFILE%ecomp`, runs `Setup.cmd`
+there with a progress bar, and ends on a **Play** button. It is
+[recomp-launcher](https://github.com/sp00nznet/recomp-launcher) with this
+repo's `launcher/launcher.json`; nothing of the game is in it.
+
+### Quick start: Setup.cmd
 
 1. Download this repository (the green **Code** button, then **Download ZIP**)
    and unzip it somewhere with 1 GB free.

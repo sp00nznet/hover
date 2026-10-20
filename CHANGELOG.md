@@ -5,6 +5,16 @@ versions follow [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- An installer: [recomp-launcher](https://github.com/sp00nznet/recomp-launcher)
+  built with `launcher/launcher.json` by `.github/workflows/installer.yml`, a
+  Windows artifact on every push to `main` (a release file on a `v*` tag). It
+  takes the game's folder, the Windows 95 CD's drive, or a folder holding a
+  `hover*.zip`/`.iso`, runs `Setup.cmd -Yes`, and ends on **Play Hover!**.
+- `tools/gamefiles.py` given a folder without `HOVER.EXE` reads a
+  `hover*.zip`/`.iso`/`.cue`/`.bin` in it (what the installer passes when you
+  pick the folder your download is in).
+
 ### Changed
 - `Setup.cmd` follows [recomp-launcher](https://github.com/sp00nznet/recomp-launcher)'s
   setup contract: `-GameDir` names your copy (`-Game` still works), the
