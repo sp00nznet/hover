@@ -5,6 +5,19 @@ versions follow [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+- `Setup.cmd` follows [recomp-launcher](https://github.com/sp00nznet/recomp-launcher)'s
+  setup contract: `-GameDir` names your copy (`-Game` still works), the
+  toolkit is `..\pcrecomp` (an older `..\tools` is still used when there is
+  no `..\pcrecomp`), it never waits for Enter under the launcher, and exit
+  code 0 means the `Hover!` shortcut is there. With `-Yes` it installs Git
+  when it is missing, offers a `git pull` of a toolkit on `main` that is too
+  old, and stops instead of asking when it can't find the game. It also looks
+  for a `hover*.zip`/`.iso` beside the repo and in Downloads, and finds a
+  freshly installed Python without a rerun.
+- The jump-table fix ([pcrecomp#24](https://github.com/sp00nznet/pcrecomp/pull/24))
+  is in pcrecomp `main`; CI and the docs no longer pin its branch.
+
 ### Removed
 - The "not running a 256 color video driver" message at every start. Only
   the startup check is answered; rendering is unchanged.

@@ -30,7 +30,7 @@ mode).
 | Headless mode | `--headless --record out.mp4`, with `--key` for scripted input. Never shows or activates a window ([docs/host.md](docs/host.md)) |
 | Conformance harness | **22/22** milestones (boot, start, drive, 1,000 frames on a pinned seed, controller mapping, share codes, Recomp menu, a 2-player split screen, and online on this PC: in step through tick 400, a deliberate desync caught, and a late joiner replaying, taking its seat and leaving), 0 lift errors, 0 unresolvable tail calls ([tools/conformance.py](tools/conformance.py)) |
 
-One toolkit fix was needed, [pcrecomp#24](https://github.com/sp00nznet/pcrecomp/pull/24), open until it merges
+One toolkit fix was needed, [pcrecomp#24](https://github.com/sp00nznet/pcrecomp/pull/24), now in pcrecomp `main`
 ([docs/toolkit.md](docs/toolkit.md)).
 
 ## Screenshots
@@ -111,8 +111,10 @@ the game folder. Nothing is downloaded for you.
 It checks for Python 3.10+, the `pefile` and `capstone` packages, the pcrecomp
 toolkit and the Visual Studio 2022 C++ compiler, and **asks** before
 installing any of them, saying what and how big. It finds Hover! in your
-drives, or asks where it is (a drive, a folder, or a `.zip`/`.iso`/`.cue`/
-`.bin`). Then it copies the game into `game\hover`, finds every function,
+drives or as a `hover*.zip`/`.iso` beside the repo or in Downloads, or asks
+where it is (a drive, a folder, or a `.zip`/`.iso`/`.cue`/`.bin`;
+`Setup.cmd -GameDir E:\` skips the question, `-Yes` answers yes to every
+install). Then it copies the game into `game\hover`, finds every function,
 recompiles `HOVER.EXE` and builds `build\hover.exe`. A rerun skips the
 finished steps. If it stops, it says why in one sentence, and the details are
 in `setup.log`.
@@ -124,16 +126,17 @@ It ends with a **`Hover!`** shortcut in the folder. Double-click it to play.
 Prerequisites: Windows 10/11, **Python 3.10+** (`py -3 --version`), **git**,
 **Visual Studio 2022** (or its Build Tools) with *Desktop development with
 C++*, **ffmpeg** on `PATH` for `--record` only, and the pcrecomp toolkit
-cloned **beside** this repository as `tools`:
+cloned **beside** this repository as `pcrecomp`, on `main`:
 
 ```
 some-folder\
-  tools\                        <- git clone https://github.com/sp00nznet/pcrecomp tools
+  pcrecomp\                     <- git clone https://github.com/sp00nznet/pcrecomp
   hover\                        <- this repository
 ```
 
-Until the jump-table fix ([pcrecomp#24](https://github.com/sp00nznet/pcrecomp/pull/24)) merges, use its branch:
-`git -C tools checkout fix/generate-jump-table-self-arm` ([docs/toolkit.md](docs/toolkit.md)).
+An older checkout beside it named `tools` works too: `set PCRECOMP=..\tools`
+for the Python steps and `set CMAKE_ARGS=-DPCRECOMP=../tools` for `build.cmd`
+(`Setup.cmd` picks it up by itself when there is no `pcrecomp`).
 
 1. Python packages:
    ```
@@ -229,7 +232,7 @@ or a watchdog dump.
 
 Steps 3 to 5 above. `PCRECOMP` (Python) and `-DPCRECOMP=` (CMake, through
 `set CMAKE_ARGS=...` for `build.cmd`) point at a toolkit checkout other than
-`..\tools`; the lifter and the runtime must come from the same tree. How the
+`..\pcrecomp`; the lifter and the runtime must come from the same tree. How the
 pieces fit is [docs/architecture.md](docs/architecture.md); what the host
 does and why is [docs/host.md](docs/host.md).
 

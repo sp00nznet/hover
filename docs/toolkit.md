@@ -7,9 +7,8 @@ as its own PR (REPO_RULES section 11). Hover! needed one:
 |---|---|---|
 | [pcrecomp#24](https://github.com/sp00nznet/pcrecomp/pull/24) | `generate._jump_table`: an entry never points into its own table | a fault two seconds into level 1 |
 
-`Setup.cmd` checks the toolkit for it and names it if it is missing. Until it
-merges, point `PCRECOMP` at a checkout of its branch,
-`fix/generate-jump-table-self-arm`.
+It is in pcrecomp `main`. `Setup.cmd` checks the toolkit for it, offers a
+`git pull` when the checkout is on `main`, and names it otherwise.
 
 ## The switch that ate its own table
 

@@ -12,7 +12,7 @@ import subprocess
 import sys
 
 _HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-TOOLS = os.path.join(os.environ.get('PCRECOMP', os.path.join(_HERE, '..', 'tools')), 'tools')
+TOOLS = os.path.join(os.environ.get('PCRECOMP', os.path.join(_HERE, '..', 'pcrecomp')), 'tools')
 GAME = os.path.join(_HERE, 'game', 'hover')
 
 os.makedirs(os.path.join(_HERE, 'work'), exist_ok=True)     # gitignored, so absent in a fresh copy

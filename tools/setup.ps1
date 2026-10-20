@@ -8,13 +8,24 @@
 # (-Force redoes them), so a rerun after a failure resumes. Everything it does
 # goes to setup.log.
 #
-#   -Game <drive, folder, .zip, .iso, .cue or .bin>   skip the question
-#   -Yes                                              answer yes to every install question
-param([switch]$Force, [switch]$Yes, [string]$Game = "")
+#   -GameDir <drive, folder, .zip, .iso, .cue or .bin>   skip the question (-Game works too)
+#   -Yes                                                 answer yes to every install question
+#
+# The toolkit is ..\pcrecomp (PCRECOMP overrides it; an older ..\tools is used
+# when there is no ..\pcrecomp). Under recomp-launcher (RECOMP_LAUNCHER=1) it
+# never waits for Enter, and exit code 0 means the shortcut is there.
+param([switch]$Force, [switch]$Yes, [Alias('Game')][string]$GameDir = "")
+$Game = $GameDir
 
 $ErrorActionPreference = 'Stop'
 $Root = Split-Path -Parent $PSScriptRoot
-$Toolkit = if ($env:PCRECOMP) { $env:PCRECOMP } else { Join-Path (Split-Path -Parent $Root) 'tools' }
+$Toolkit = $env:PCRECOMP
+if (-not $Toolkit) {
+  $Toolkit = Join-Path (Split-Path -Parent $Root) 'pcrecomp'
+  $old = Join-Path (Split-Path -Parent $Root) 'tools'
+  if (-not (Test-Path $Toolkit) -and (Test-Path (Join-Path $old 'tools\lift\lift32.py'))) { $Toolkit = $old }
+}
+$env:PCRECOMP = $Toolkit   # the Python steps read it too
 $Log = Join-Path $Root 'setup.log'
 Set-Location $Root
 function Log($t) { Add-Content -Path $Log -Value $t -Encoding UTF8 }
@@ -22,12 +33,13 @@ Log "==== setup $(Get-Date -Format s)"
 
 function Say($t, $c = 'Gray') { Write-Host $t -ForegroundColor $c; Log $t }
 function Step($n, $t) { Write-Host ""; Say "[$n/6] $t" 'Cyan' }
-function Pause-End { if (-not $Yes) { Read-Host "Press Enter to close" | Out-Null } }
+function Pause-End { if (-not $Yes -and $env:RECOMP_LAUNCHER -ne '1') { Read-Host "Press Enter to close" | Out-Null } }
 function Fail($t) {
   Say ""; Say "Setup stopped: $t" 'Red'
   Say "The details are in $Log. Fix that and run Setup.cmd again; finished steps are skipped." 'Yellow'
   Pause-End; exit 1
 }
+trap { Fail "$_" }
 function Ask($q) { if ($Yes) { Say "$q yes"; return $true }; $a = Read-Host "$q [Y/n]"; return -not ($a -match '^[nN]') }
 function Refresh-Path {
   $env:Path = [Environment]::GetEnvironmentVariable('Path', 'Machine') + ';' + [Environment]::GetEnvironmentVariable('Path', 'User')
@@ -48,7 +60,7 @@ function Run($what, [string[]]$cmd) {
   if ($code -ne 0) { Fail "$what failed (exit code $code)." }
 }
 
-Clear-Host
+if ($env:RECOMP_LAUNCHER -ne '1') { Clear-Host }
 Say "Hover!: static recompilation setup" 'White'
 Say "You need your own copy of Hover! (the Windows 95 CD, the Hover! CD, an image of either, or a zip of the game folder) and about 1 GB free."
 
@@ -57,7 +69,9 @@ Step 1 "Checking the tools"
 # A Python that answers "Python 3.x". The Store's placeholder "python" (the
 # one that opens the Store) answers nothing, so asking is the reliable test.
 function Find-Python {
-  foreach ($c in @(@('py', '-3'), @('python'), @('python3'))) {
+  # The per-user install winget makes, before PATH has it.
+  $user = @(Get-ChildItem "$env:LOCALAPPDATA\Programs\Python\Python3*\python.exe" -ErrorAction SilentlyContinue | Sort-Object FullName -Descending | ForEach-Object { ,@($_.FullName) })
+  foreach ($c in (@(@('py', '-3'), @('python'), @('python3')) + $user)) {
     if (-not (Get-Command $c[0] -ErrorAction SilentlyContinue)) { continue }
     $old = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
     $rest = @($c | Select-Object -Skip 1)
@@ -77,7 +91,7 @@ if (-not $pyargs) {
   Exec @('winget', 'install', '-e', '--id', 'Python.Python.3.12', '--scope', 'user', '--accept-package-agreements', '--accept-source-agreements') | Out-Null
   Refresh-Path
   $pyargs = Find-Python
-  if (-not $pyargs) { Fail "Python installed, but Windows has not picked it up yet: close this window and run Setup.cmd again." }
+  if (-not $pyargs) { Fail "Python installed, but it can't be found. Install Python 3.12 from python.org yourself." }
 }
 Say "  Python: $($pyargs -join ' ')"
 
@@ -89,7 +103,13 @@ if ((Exec ($pyargs + @('-c', 'import pefile, capstone'))) -ne 0) {
 
 if (-not (Test-Path (Join-Path $Toolkit 'tools\lift\lift32.py'))) {
   Say "  The pcrecomp toolkit is not beside this folder ($Toolkit)."
-  if (-not (Get-Command git -ErrorAction SilentlyContinue)) { Fail "git is needed to fetch pcrecomp. Install Git for Windows, then run Setup.cmd again." }
+  if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
+    if (-not (Ask "  git is needed to fetch it. Install Git for Windows now (winget, about 60 MB)?")) { Fail "git is needed to fetch pcrecomp." }
+    if (-not (Get-Command winget -ErrorAction SilentlyContinue)) { Fail "winget is missing. Install Git for Windows yourself." }
+    Exec @('winget', 'install', '-e', '--id', 'Git.Git', '--accept-package-agreements', '--accept-source-agreements') | Out-Null
+    Refresh-Path
+    if (-not (Get-Command git -ErrorAction SilentlyContinue)) { Fail "Git did not install. Install Git for Windows yourself." }
+  }
   if (-not (Ask "  Download it now (git, about 20 MB)?")) { Fail "pcrecomp is required at $Toolkit." }
   Run "Cloning pcrecomp" @('git', 'clone', '--depth', '1', 'https://github.com/sp00nznet/pcrecomp', $Toolkit)
 }
@@ -97,11 +117,21 @@ if (-not (Test-Path (Join-Path $Toolkit 'tools\lift\lift32.py'))) {
 $need = @(
   @('#7 (native32)', 'runtime\native32\native32.c', 'native32_export'),
   @('the inline jump table fix (generate.py)', 'tools\lift\generate.py', 'table_end = at + code_start'))
-$missing = @($need | Where-Object {
+function Missing { @($need | Where-Object {
   $f = Join-Path $Toolkit $_[1]
-  -not ((Test-Path $f) -and (Select-String -Path $f -Pattern $_[2] -SimpleMatch -Quiet)) } | ForEach-Object { $_[0] })
+  -not ((Test-Path $f) -and (Select-String -Path $f -Pattern $_[2] -SimpleMatch -Quiet)) } | ForEach-Object { $_[0] }) }
+$missing = Missing
+# Older than this game needs: a checkout on main may move forward (every game
+# tracks main); any other branch is someone's work and is left alone.
+$head = Join-Path $Toolkit '.git\HEAD'
+if ($missing -and (Test-Path $head) -and (Get-Content $head) -eq 'ref: refs/heads/main') {
+  if (Ask "  Your pcrecomp is missing $($missing -join ', '). Update it (git pull)?") {
+    Run "Updating pcrecomp" @('git', '-C', $Toolkit, 'pull', '--ff-only')
+    $missing = Missing
+  }
+}
 if ($missing) {
-  Fail "your pcrecomp at $Toolkit is missing $($missing -join ', '). Update it (git -C `"$Toolkit`" pull), or until those merge, point PCRECOMP at a checkout that has them (docs\toolkit.md)."
+  Fail "your pcrecomp at $Toolkit is missing $($missing -join ', '). Update it (git -C `"$Toolkit`" pull), or point PCRECOMP at a checkout that has them (docs\toolkit.md)."
 }
 Say "  pcrecomp: $Toolkit"
 
@@ -145,6 +175,15 @@ if ((Test-Path 'game\hover\HOVER.EXE') -and -not $Force) {
       if ($Game) { break }
     }
   }
+  if (-not $Game) {
+    # A download of it nearby: archive.org's is hoverwindows95.zip.
+    foreach ($d in @($Root, (Split-Path -Parent $Root), (Join-Path $env:USERPROFILE 'Downloads'))) {
+      $f = Get-ChildItem $d -File -Filter 'hover*' -ErrorAction SilentlyContinue |
+        Where-Object { $_.Extension -match '^\.(zip|iso|cue)$' } | Select-Object -First 1
+      if ($f) { $Game = $f.FullName; Say "  Found $Game"; break }
+    }
+  }
+  if (-not $Game -and $Yes) { Fail "Hover! wasn't found. Give its drive, folder or .zip/.iso with -GameDir." }
   while (-not $Game) {
     $Game = (Read-Host "  Where is Hover!? A drive (E:\), a folder with HOVER.EXE, or a .zip/.iso/.cue/.bin file").Trim('"', ' ')
   }
@@ -181,6 +220,8 @@ $s.IconLocation = (Join-Path $Root 'game\hover\HOVER.EXE') + ',0'
 $s.Save()
 Say "  $lnk"
 
+if (-not (Test-Path $lnk)) { Fail "the shortcut was not made." }
 Write-Host ""
 Say "Done. Double-click 'Hover!' in this folder to play." 'Green'
 Pause-End
+exit 0

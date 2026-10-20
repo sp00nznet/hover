@@ -11,8 +11,6 @@ frontend (ImGui, ini, palette emulation, shader chain), and
 
 ## 0. Housekeeping
 
-- **Merge the toolkit fix** ([pcrecomp#24](https://github.com/sp00nznet/pcrecomp/pull/24)) and drop the
-  branch pin from `Setup.cmd`, the README and CI.
 - **`hover.ini` beside the exe** (started: `[pad]` is in): one settings file for everything below
   (`[video]`, `[audio]`, `[pad]`, `[levels]`, `[net]`), read and written with
   `Get/WritePrivateProfile*` as SimCity 2000 does. Command-line flags

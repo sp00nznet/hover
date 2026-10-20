@@ -69,7 +69,7 @@ def from_zip(z, label):
 
 
 def from_image(path):
-    sys.path.insert(0, os.path.join(os.environ.get('PCRECOMP', os.path.join(ROOT, '..', 'tools')),
+    sys.path.insert(0, os.path.join(os.environ.get('PCRECOMP', os.path.join(ROOT, '..', 'pcrecomp')),
                                     'tools', 'assets'))
     import iso_peek
 
