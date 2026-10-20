@@ -5,6 +5,8 @@ versions follow [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.1.0-alpha.1] - 2026-10-20
+
 ### Added
 - An installer: [recomp-launcher](https://github.com/sp00nznet/recomp-launcher)
   built with `launcher/launcher.json` by `.github/workflows/installer.yml`, a
