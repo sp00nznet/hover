@@ -5,6 +5,8 @@ versions follow [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.1.0-alpha.2] - 2026-10-20
+
 ### Added
 - Linux, under Wine: `setup.sh` runs the same six steps as `Setup.cmd`.
   It cross-compiles `build/hover.exe` with clang-cl against xwin's MSVC CRT
