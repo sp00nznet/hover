@@ -1,4 +1,4 @@
-# The installer for this commit, for Windows (recomp-launcher with
+# The installer for this commit, for Windows and Linux (recomp-launcher with
 # launcher/launcher.json): an artifact on every push to main, a release file
 # on a v* tag.
 name: installer
@@ -17,4 +17,4 @@ jobs:
     uses: sp00nznet/recomp-launcher/.github/workflows/installer.yml@main
     with:
       name: Hover-Recomp-Installer
-      platforms: windows
+      platforms: windows linux

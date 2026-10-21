@@ -5,6 +5,28 @@ versions follow [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- Linux, under Wine: `setup.sh` runs the same six steps as `Setup.cmd`.
+  It cross-compiles `build/hover.exe` with clang-cl against xwin's MSVC CRT
+  and Windows SDK (`build.sh`, `cmake/clang-cl-x86.cmake`, from
+  redalert2-recomp) and leaves `Hover!.sh`, which plays it under Wine in the
+  game's own window. The installer is now built for Linux too
+  (`launcher/launcher.json` `setup.linux`, `platforms: windows linux`).
+  Tested on Debian 13 with Wine 10: set up from the zip in 14 minutes
+  (12 of them the SDK download), and level 1 played with the keyboard.
+- `tools/conformance.py` runs the host under Wine off Windows (`WINE` picks
+  which). Under Wine 10 it passes 20 of 22: the two one-PC online
+  milestones that start from tick 0 race (ROADMAP).
+
+### Fixed
+- The game's `LoadModule("DISPDIB.DLL")` answers "not found", as Windows 10
+  and 11 do. Under Wine it started a 16-bit VDM that outlived the game.
+- A second copy on one PC no longer stops with "Hover! is already running"
+  under Wine (the `Hover!InitInstance` event is unnamed). On Windows the check
+  never fired.
+- The installer's game check also takes lowercase names (`hover.exe`,
+  `funstuff/hover/hover.exe`), as a Linux CD mount shows them.
+
 ## [0.1.0-alpha.1] - 2026-10-20
 
 ### Added

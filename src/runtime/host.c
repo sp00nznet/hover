@@ -92,6 +92,26 @@ static void shim_LoadLibraryA(void) {
     RET((uintptr_t)h, 1);
 }
 
+/* The game's only LoadModule is DISPDIB.DLL, Windows 95's low-resolution
+ * full-screen driver. Windows 10 and 11 have none and answer 2 (file not
+ * found), and the game goes on without it; Wine has one, 16-bit, and starts
+ * its VDM for it, which outlives the game (and holds a captured stdout open).
+ * Answer as Windows does, everywhere. */
+static void shim_LoadModule(void) {
+    fprintf(stderr, "[module] LoadModule(\"%s\") -> 2, not found\n", gstr(ARG(0)));
+    RET(ERROR_FILE_NOT_FOUND, 2);
+}
+
+/* InitInstance (0x00425E80) makes the event "Hover!InitInstance" and quits
+ * with "already running" when it exists. Online play on one PC (and its
+ * conformance milestones) needs two at once. On Windows the check never saw
+ * ERROR_ALREADY_EXISTS anyway; Wine keeps it. The event is made unnamed. */
+static void shim_CreateEventA(void) {
+    const char* name = (const char*)(uintptr_t)ARG(3);
+    if (name && !strcmp(name, "Hover!InitInstance")) name = NULL;
+    RET((uintptr_t)CreateEventA((LPSECURITY_ATTRIBUTES)(uintptr_t)ARG(0), ARG(1), ARG(2), name), 4);
+}
+
 /* The startup display check (0x0041CEE3, and 0x0041CF6D, the catalog's entry
  * inside it) asks the screen DC for RC_PALETTE and a 256-entry palette, and
  * on every true-colour display since the late 90s says "We have detected that
@@ -637,6 +657,8 @@ static void shim_ExitProcess(void) {
     { "GetModuleFileNameA", shim_GetModuleFileNameA }, \
     { "GetCommandLineA", shim_GetCommandLineA }, \
     { "LoadLibraryA", shim_LoadLibraryA }, \
+    { "LoadModule", shim_LoadModule }, \
+    { "CreateEventA", shim_CreateEventA }, \
     { "GetDeviceCaps", shim_GetDeviceCaps }, \
     { "GetAsyncKeyState", shim_GetAsyncKeyState }, \
     { "GetKeyState", shim_GetKeyState }, \

@@ -159,8 +159,12 @@ can draw any craft's view, and the simulation is deterministic per tick.
 - **Cheats menu**: all powerups, invincibility, robot speed (addresses from
   the craft struct work in section 5).
 - **Discord-free "now playing" overlay**: level, seed, time, flags.
-- **Linux / Steam Deck** under Wine or Proton: the host is plain Win32 and
-  should work; test it.
+- **Linux** is in, under Wine (`setup.sh`, the Linux installer): conformance
+  passes 20 of 22 there. The two one-PC online games that start from tick 0
+  race: under Wine the client's Quick Help dialog can keep it quiet past the
+  host's 4 s timeout, and the host drops it at tick 4 (the late joiner is fine).
+  Next: the presenter under Wine (it has no window cloaking, so `Hover!.sh`
+  plays `--classic`), a Steam Deck run under Proton, and that race.
 
 ## Carried over
 

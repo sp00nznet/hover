@@ -104,15 +104,19 @@ the game folder. Nothing is downloaded for you.
 
 ### Quick start: the installer
 
-Download **Hover-Recomp-Installer** for Windows and run it. For now it is the
-artifact of the latest [installer run](https://github.com/sp00nznet/hover/actions/workflows/installer.yml)
-(sign in to GitHub, open the run, *Artifacts*); a tagged release comes next.
+**Windows:** download `Hover-Recomp-Installer-windows-x64.exe` from the
+[latest release](https://github.com/sp00nznet/hover/releases) and run it.
 It's unsigned, so SmartScreen asks: **More info**, **Run anyway**.
+
+**Linux:** the Linux installer is built on every push to `main`, as an
+artifact of the latest [installer run](https://github.com/sp00nznet/hover/actions/workflows/installer.yml)
+(sign in to GitHub, open the run, *Artifacts*). It runs `setup.sh` (below),
+and the game plays under Wine.
 
 Point it at the folder holding your copy (the game's folder, the CD's drive,
 or the folder your `hover*.zip`/`.iso` is in) and press build. It downloads
-this repository and pcrecomp into `%USERPROFILE%ecomp`, runs `Setup.cmd`
-there with a progress bar, and ends on a **Play** button. It is
+this repository and pcrecomp into a `recomp` folder in your home folder, runs
+the setup there with a progress bar, and ends on a **Play** button. It is
 [recomp-launcher](https://github.com/sp00nznet/recomp-launcher) with this
 repo's `launcher/launcher.json`; nothing of the game is in it.
 
@@ -134,6 +138,27 @@ finished steps. If it stops, it says why in one sentence, and the details are
 in `setup.log`.
 
 It ends with a **`Hover!`** shortcut in the folder. Double-click it to play.
+
+### Quick start: Linux (setup.sh)
+
+The game is the same Windows program, cross-compiled on Linux with clang-cl
+and played under Wine. From your package manager you need clang, lld, llvm,
+cmake, ninja, Wine with 32-bit support, Python 3.10+ and git. On Debian or
+Ubuntu:
+
+```
+sudo dpkg --add-architecture i386 && sudo apt update
+sudo apt install clang clang-tools lld llvm cmake ninja-build wine wine32:i386 python3-venv curl git
+./setup.sh                       # or: ./setup.sh --game-dir /media/you/WIN95/FUNSTUFF/HOVER
+```
+
+It runs the same six steps as `Setup.cmd`. It asks before it downloads
+[xwin](https://github.com/Jake-Shadle/xwin) and, through xwin, Microsoft's C
+runtime and Windows SDK (about 1 GB and 10 to 15 minutes, under Microsoft's
+licence, into `~/.xwin`). It finds Hover! on a mounted CD, or as a
+`hover*.zip`/`.iso` beside the repo or in `~/Downloads`. Then
+**`./Hover!.sh`** plays in the game's own window (`--classic`), because the
+presenter's window doesn't work under Wine yet. Tested on Debian 13 with Wine 10.
 
 ### Step by step
 

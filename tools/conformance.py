@@ -30,6 +30,8 @@ import time
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 HOST = os.path.join(ROOT, 'build', 'hover.exe')
+# Elsewhere it runs under Wine (setup.sh); WINE picks another wine.
+RUN = [HOST] if os.name == 'nt' else [os.environ.get('WINE', 'wine'), HOST]
 GEN = os.path.join(ROOT, 'src', 'recomp', 'gen')
 BASELINE = os.path.join(ROOT, 'conformance.json')
 
@@ -37,7 +39,7 @@ BASELINE = os.path.join(ROOT, 'conformance.json')
 MILESTONES = [
     ('image mapped, every import bound', r'\[bind\] 0x00400000: .* 0 unresolved'),
     ('display check passes, no 256-colour warning', r'\[display\] the 256-colour check is answered'),
-    ('frame window created', r'CreateWindowExA\("Hover!", 536x431\)'),
+    ('frame window created', r'CreateWindowExA\("Hover!", \d+x\d+\)'),   # 536x431; 528x426 under Wine
     ('dashboard art loaded (DASHRES.DLL)', r'LoadLibraryA\("dashres.dll"\) -> data file [0-9A-F]*[1-9A-F]'),
     ('Quick Help dialog at startup', r'\[headless\] dialog 115 '),
     ('first frame presented', r'\[capture\] frame 1 presented'),
@@ -75,10 +77,10 @@ PLAY = ['--frames', '1000', '--diff', '150,210', '--seed', '12345',
 def online(port, host_extra, client_extra, frames, join_after=1, client_frames=None):
     """A host and a client on this PC, over localhost: both logs."""
     common = ['--headless', '--run', '--watchdog', '150']
-    h = subprocess.Popen([HOST] + common + ['--frames', str(frames), '--host', str(port)] + host_extra,
+    h = subprocess.Popen(RUN + common + ['--frames', str(frames), '--host', str(port)] + host_extra,
                          cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, errors='replace')
     time.sleep(join_after)
-    c = subprocess.run([HOST] + common + ['--frames', str(client_frames or frames),
+    c = subprocess.run(RUN + common + ['--frames', str(client_frames or frames),
                                           '--join', '127.0.0.1:%d' % port] + client_extra,
                        cwd=ROOT, capture_output=True, text=True, errors='replace', timeout=200)
     try:
@@ -91,7 +93,7 @@ def online(port, host_extra, client_extra, frames, join_after=1, client_frames=N
 
 def boot(seconds):
     try:
-        p = subprocess.run([HOST, '--headless', '--run', '--watchdog', str(seconds)] + PLAY,
+        p = subprocess.run(RUN + ['--headless', '--run', '--watchdog', str(seconds)] + PLAY,
                            cwd=ROOT, capture_output=True, text=True, errors='replace',
                            timeout=seconds + 60)
         out, code = p.stdout + p.stderr, p.returncode
@@ -100,7 +102,7 @@ def boot(seconds):
         out = out if isinstance(out, str) else out.decode(errors='replace')
     # The controller mapping has no controller to test against, so the host
     # tests it on synthetic pad states (pad.c, pad_selftest).
-    t = subprocess.run([HOST, '--headless', '--run', '--watchdog', '90'] + SPLIT, cwd=ROOT,
+    t = subprocess.run(RUN + ['--headless', '--run', '--watchdog', '90'] + SPLIT, cwd=ROOT,
                        capture_output=True, text=True, errors='replace', timeout=150)
     out += '\n[split] ' + (t.stdout + t.stderr).replace('\n', ' ') + '\n'
     # Online: lockstep over localhost, both driving; then a deliberate desync.
@@ -118,7 +120,7 @@ def boot(seconds):
                         1900, join_after=15, client_frames=900)
     out += '\n[online-late] ' + cout + ' ' + hout + '\n'
     for test in ('--pad-selftest', '--levels-selftest'):
-        t = subprocess.run([HOST, test], cwd=ROOT, capture_output=True, text=True,
+        t = subprocess.run(RUN + [test], cwd=ROOT, capture_output=True, text=True,
                            errors='replace', timeout=60)
         out += t.stdout + t.stderr
     passed = [name for name, pat in MILESTONES if re.search(pat, out)]

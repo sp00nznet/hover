@@ -13,6 +13,8 @@ stopped.
 | `GetDeviceCaps` | Only for the startup display check (`0x0041CEE3`): it is told the screen is a 256-colour palette device, so the "not running a 256 color video driver" box is gone. The renderer's own calls see the real display; it draws into its own 8-bit DIBs either way |
 | `GetLocalTime`, `GetTimeZoneInformation` | Level seeds: `time()` returns exactly the seed `levels.c` picks, so `srand` gets it ([levels.md](levels.md)) |
 | `LoadLibraryA("dashres.dll")` | Loaded with `LOAD_LIBRARY_AS_DATAFILE`: the dashboard bitmaps load as before and the DLL's original `DllMain` never runs |
+| `LoadModule("DISPDIB.DLL")` | Answers 2 (not found), as Windows 10 and 11 do. Wine has a 16-bit `DISPDIB.DLL` and would start its VDM for it, a process that outlives the game |
+| `CreateEventA("Hover!InitInstance")` | Made unnamed, so a second copy on the same PC (online play over localhost, its conformance milestones) never says "already running". On Windows the check never saw `ERROR_ALREADY_EXISTS` anyway; under Wine it did |
 | `GetAsyncKeyState`, `GetKeyState` | Scripted keys (`--key`). Headless, the real keyboard is not read at all, so typing on the machine cannot steer a recording |
 | `BitBlt`, `StretchBlt` | Capture: see below |
 | `CreateWindowExA` | Remembers the frame window; headless, cloaks it (below) |
